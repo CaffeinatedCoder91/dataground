@@ -1,73 +1,117 @@
-# React + TypeScript + Vite
+# Dataground
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A property risk intelligence tool for the UK insurance market.
 
-Currently, two official plugins are available:
+Enter a UK postcode to see its location on a map alongside an AI-generated risk assessment covering flood, fire, and subsidence risk.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## What It Does
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Geocodes any UK postcode using the Postcodes.io API
+- Plots the location on an interactive Mapbox map
+- Generates a structured property risk assessment using Claude
+- Returns flood risk, fire risk, subsidence risk, an overall score, and key risk factors
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Tech Stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- **React 18** + **TypeScript** + **Vite**
+- **StyleX** — Meta's atomic CSS solution
+- **Mapbox GL JS** — map rendering
+- **Postcodes.io** — free UK geocoding, no API key required
+- **Anthropic Claude** — AI risk analysis via Vercel serverless function
+- **Vercel** — hosting and serverless functions
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+---
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Running Locally
+
+**Prerequisites:** Node.js 18+, a Mapbox account, an Anthropic API key
+
+**1. Clone the repo**
+
+```bash
+git clone https://github.com/YOUR_USERNAME/dataground.git
+cd dataground
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+**2. Install dependencies**
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
+
+**3. Create `.env.local`**
+
+```
+VITE_MAPBOX_TOKEN=your_mapbox_public_token
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+Get your Mapbox token at [mapbox.com](https://mapbox.com) — the default public token works fine.
+
+Get your Anthropic key at [console.anthropic.com](https://console.anthropic.com).
+
+**4. Start the dev server**
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173)
+
+---
+
+## Commands
+
+```bash
+npm run dev          # development server
+npm run build        # production build
+npm run preview      # preview production build locally
+npm run type-check   # TypeScript check
+npm run test         # run tests
+npm run test:watch   # run tests in watch mode
+```
+
+---
+
+## Project Structure
+
+```
+dataground/
+  api/
+    config.ts              # Claude model constants
+    risk-assessment.ts     # Vercel serverless function
+  src/
+    components/            # UI components (each with .stylex.ts and .test.tsx)
+    hooks/                 # useGeocoding, useRiskAssessment
+    styles/                # StyleX design tokens
+    types/                 # TypeScript types
+    utils/                 # Helper functions
+    App.tsx
+  AGENTS.md                # AI coding assistant instructions
+  SPEC.md                  # Technical specification
+```
+
+---
+
+## Deployment
+
+Deployed to Vercel. Add the following environment variables in your Vercel project settings:
+
+```
+VITE_MAPBOX_TOKEN=your_mapbox_public_token
+ANTHROPIC_API_KEY=your_anthropic_api_key
+```
+
+The `ANTHROPIC_API_KEY` is only used server-side in the Vercel function and is never exposed to the browser.
+
+---
+
+## Notes
+
+- Risk assessments are AI-generated based on geographic knowledge and are for demonstration purposes only
+- Postcodes.io provides free UK geocoding with no rate limits for reasonable usage
+- Mapbox free tier allows 50,000 map loads per month
