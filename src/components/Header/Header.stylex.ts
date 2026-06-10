@@ -3,17 +3,17 @@ import { colours, spacing, fontSize, fontWeight, borderWidth, margin } from '../
 
 export const styles = stylex.create({
   container: {
-    padding: spacing.large,
+    padding: spacing.extraLarge,
     borderBottomWidth: borderWidth.thin,
     borderBottomStyle: 'solid',
     borderBottomColor: colours.borderDefault,
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
   },
   title: {
-    fontSize: fontSize.tripleExtraLarge,
+    fontSize: fontSize.quadrupleExtraLarge,
     fontWeight: fontWeight.bold,
     color: colours.textPrimary,
-    marginBottom: spacing.small,
+    marginBottom: spacing.medium,
     margin: margin.none,
   },
   subtitle: {

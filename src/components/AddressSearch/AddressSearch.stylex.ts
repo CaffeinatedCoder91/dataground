@@ -1,12 +1,18 @@
 import * as stylex from '@stylexjs/stylex';
-import { colours, spacing, fontSize, fontWeight, borderRadius, borderWidth, outline } from '../../styles/tokens.stylex';
+import { colours, spacing, fontSize, fontWeight, borderRadius, borderWidth, outline, lineHeight } from '../../styles/tokens.stylex';
 
 export const styles = stylex.create({
   form: {
     display: 'flex',
     flexDirection: 'column',
-    gap: spacing.small,
-    marginBottom: spacing.large,
+    gap: spacing.medium,
+    marginBottom: spacing.extraLarge,
+  },
+  description: {
+    fontSize: fontSize.small,
+    color: colours.textSecondary,
+    lineHeight: lineHeight.relaxed,
+    marginBottom: spacing.small,
   },
   label: {
     fontSize: fontSize.small,
@@ -15,10 +21,10 @@ export const styles = stylex.create({
   },
   inputWrapper: {
     display: 'flex',
+    flexDirection: 'column',
     gap: spacing.small,
   },
   input: {
-    flex: 1,
     padding: spacing.medium,
     fontSize: fontSize.base,
     borderWidth: borderWidth.thin,
@@ -40,6 +46,7 @@ export const styles = stylex.create({
   },
   button: {
     padding: spacing.medium,
+    width: '100%',
     backgroundColor: colours.spinner,
     color: colours.white,
     borderWidth: borderWidth.none,

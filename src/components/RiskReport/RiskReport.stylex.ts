@@ -1,9 +1,9 @@
 import * as stylex from '@stylexjs/stylex';
-import { colours, spacing, fontSize, fontWeight, borderRadius, lineHeight } from '../../styles/tokens.stylex';
+import { colours, spacing, fontSize, fontWeight, borderRadius, lineHeight, borderWidth, breakpoints } from '../../styles/tokens.stylex';
 
 export const styles = stylex.create({
   container: {
-    padding: spacing.large,
+    padding: spacing.extraLarge,
     backgroundColor: colours.backgroundSecondary,
     borderRadius: borderRadius.base,
   },
@@ -16,16 +16,16 @@ export const styles = stylex.create({
   region: {
     fontSize: fontSize.small,
     color: colours.textSecondary,
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
   },
   scoreSection: {
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
     textAlign: 'center',
   },
   scoreLabel: {
     fontSize: fontSize.small,
     color: colours.textSecondary,
-    marginBottom: spacing.small,
+    marginBottom: spacing.medium,
   },
   scoreValue: {
     fontSize: fontSize.quadrupleExtraLarge,
@@ -34,7 +34,7 @@ export const styles = stylex.create({
     lineHeight: lineHeight.tight,
   },
   scoreMax: {
-    fontSize: fontSize.large,
+    fontSize: fontSize.base,
     color: colours.textSecondary,
     display: 'inline',
   },
@@ -42,30 +42,37 @@ export const styles = stylex.create({
     display: 'grid',
     gridTemplateColumns: '1fr 1fr 1fr',
     gap: spacing.medium,
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
+    [`@media (max-width: ${breakpoints.mobile})`]: {
+      gridTemplateColumns: '1fr',
+    },
   },
   summary: {
     fontSize: fontSize.small,
     lineHeight: lineHeight.relaxed,
     color: colours.textPrimary,
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
+    paddingBottom: spacing.extraLarge,
+    borderBottomWidth: borderWidth.thin,
+    borderBottomStyle: 'solid',
+    borderBottomColor: colours.borderDefault,
   },
   keyFactorsSection: {
-    marginBottom: spacing.large,
+    marginBottom: spacing.extraLarge,
   },
   keyFactorsTitle: {
     fontSize: fontSize.small,
     fontWeight: fontWeight.semibold,
     color: colours.textPrimary,
-    marginBottom: spacing.small,
+    marginBottom: spacing.medium,
   },
   keyFactorsList: {
-    paddingLeft: spacing.large,
+    paddingLeft: spacing.extraLarge,
   },
   keyFactor: {
     fontSize: fontSize.small,
     color: colours.textPrimary,
-    marginBottom: spacing.small,
+    marginBottom: spacing.medium,
     lineHeight: lineHeight.relaxed,
   },
   disclaimer: {

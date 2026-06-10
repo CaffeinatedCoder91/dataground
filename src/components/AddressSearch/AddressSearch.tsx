@@ -34,6 +34,9 @@ export const AddressSearch = ({ onSearch, isLoading, inputReference }: AddressSe
 
   return (
     <form {...stylex.props(styles.form)} onSubmit={handleSubmit}>
+      <p {...stylex.props(styles.description)}>
+        Powered by AI and geospatial data. Enter any UK postcode to instantly generate a property risk assessment covering flood, fire, and subsidence risk.
+      </p>
       <label {...stylex.props(styles.label)} htmlFor="postcode-search">
         Enter a UK postcode
       </label>

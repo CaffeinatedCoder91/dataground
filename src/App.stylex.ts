@@ -11,19 +11,27 @@ export const styles = stylex.create({
     gridTemplateColumns: `${layout.leftPanelWidth} 1fr`,
     gap: spacing.none,
     maxWidth: sizing.full,
+    height: layout.fullHeight,
     [`@media (max-width: ${breakpoints.tablet})`]: {
       gridTemplateColumns: '1fr',
+      height: 'auto',
     },
   },
   leftPanel: {
-    padding: spacing.large,
+    padding: spacing.extraLarge,
     overflowY: 'auto',
     backgroundColor: colours.backgroundPrimary,
+    height: layout.fullHeight,
   },
   rightPanel: {
     backgroundColor: colours.backgroundSecondary,
+    paddingRight: spacing.extraLarge,
+    overflow: 'hidden',
+    height: layout.fullHeight,
     [`@media (max-width: ${breakpoints.tablet})`]: {
+      height: 'auto',
       minHeight: sizing.mapMobileHeight,
+      paddingRight: spacing.none,
     },
   },
 });

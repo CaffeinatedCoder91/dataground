@@ -1,11 +1,12 @@
 import * as stylex from '@stylexjs/stylex';
-import { colours, spacing, fontSize, fontWeight, borderRadius } from '../../styles/tokens.stylex';
+import { colours, spacing, fontSize, fontWeight, borderRadius, shadows } from '../../styles/tokens.stylex';
 
 export const styles = stylex.create({
   container: {
-    padding: spacing.medium,
-    borderRadius: borderRadius.base,
+    padding: spacing.large,
+    borderRadius: borderRadius.large,
     textAlign: 'center',
+    boxShadow: shadows.base,
   },
   containerLow: {
     backgroundColor: colours.riskLow,
@@ -20,7 +21,7 @@ export const styles = stylex.create({
     fontSize: fontSize.small,
     fontWeight: fontWeight.medium,
     color: colours.white,
-    marginBottom: spacing.small,
+    marginBottom: spacing.medium,
   },
   level: {
     fontSize: fontSize.large,

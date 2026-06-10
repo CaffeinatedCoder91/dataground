@@ -63,7 +63,7 @@ export const breakpoints = {
 
 export const layout = stylex.defineVars({
   fullHeight: '100vh',
-  leftPanelWidth: '380px',
+  leftPanelWidth: '520px',
 });
 
 export const shadows = stylex.defineVars({
