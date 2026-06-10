@@ -12,6 +12,11 @@ export const AddressSearch = ({ onSearch, isLoading, inputReference }: AddressSe
   const [postcode, setPostcode] = useState('');
   const [showValidationError, setShowValidationError] = useState(false);
 
+  // Debouncing is not currently required because onSearch only fires on form submission.
+  // When autocomplete functionality is added in the future, consider using the useDebounce hook
+  // to debounce API calls triggered by input changes. This pattern ensures that autocomplete
+  // requests are debounced and prevents excessive API calls on every keystroke.
+
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
