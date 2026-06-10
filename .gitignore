@@ -27,3 +27,5 @@ dist-ssr
 .env.*.local
 AGENTS.md
 SPEC.md
+
+.playwright-mcp/

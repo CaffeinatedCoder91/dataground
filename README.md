@@ -91,8 +91,6 @@ dataground/
     types/                 # TypeScript types
     utils/                 # Helper functions
     App.tsx
-  AGENTS.md                # AI coding assistant instructions
-  SPEC.md                  # Technical specification
 ```
 
 ---

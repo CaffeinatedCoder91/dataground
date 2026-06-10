@@ -1,3 +1,16 @@
+export const RISK_LEVEL = {
+  LOW: 'low',
+  MEDIUM: 'medium',
+  HIGH: 'high',
+} as const;
+
+export type RiskLevel = (typeof RISK_LEVEL)[keyof typeof RISK_LEVEL];
+
+export interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
 export interface PostcodeLocation {
   postcode: string;
   latitude: number;
@@ -8,7 +21,7 @@ export interface PostcodeLocation {
 }
 
 export interface RiskScore {
-  level: 'low' | 'medium' | 'high' | 'very-high';
+  level: RiskLevel;
   score: number;
 }
 
