@@ -1,4 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
+import { memo } from 'react';
 import type { RiskAssessment } from '../../types';
 import { RiskCard } from '../RiskCard';
 import { styles } from './RiskReport.stylex';
@@ -9,7 +10,7 @@ interface RiskReportProps {
   region: string;
 }
 
-export const RiskReport = ({ assessment, postcode, region }: RiskReportProps) => {
+const RiskReportComponent = ({ assessment, postcode, region }: RiskReportProps) => {
   return (
     <div {...stylex.props(styles.container)}>
       <h2 {...stylex.props(styles.heading)}>{postcode}</h2>
@@ -51,3 +52,6 @@ export const RiskReport = ({ assessment, postcode, region }: RiskReportProps) =>
     </div>
   );
 };
+
+// Memoized because completed reports are read-only until a new assessment arrives.
+export const RiskReport = memo(RiskReportComponent);

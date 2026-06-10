@@ -1,4 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
+import { memo } from 'react';
 import type { RiskLevel } from '../../types';
 import { styles } from './RiskCard.stylex';
 
@@ -7,7 +8,7 @@ interface RiskCardProps {
   level: RiskLevel;
 }
 
-export const RiskCard = ({ label, level }: RiskCardProps) => {
+const RiskCardComponent = ({ label, level }: RiskCardProps) => {
   const levelText = level.charAt(0).toUpperCase() + level.slice(1);
 
   const containerStyle = level === 'low'
@@ -23,3 +24,6 @@ export const RiskCard = ({ label, level }: RiskCardProps) => {
     </div>
   );
 };
+
+// Memoized because risk cards receive stable primitive props within the report.
+export const RiskCard = memo(RiskCardComponent);
