@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { PostcodeLocation } from '../types';
 
 interface UseGeocodingReturn {
-  geocode: (postcode: string) => Promise<PostcodeLocation>;
+  geocode: (postcode: string) => Promise<PostcodeLocation | null>;
   isLoading: boolean;
   error: string | null;
 }
@@ -53,15 +53,28 @@ const parsePostcodesApiResponse = (value: unknown): PostcodesApiResponse => {
 export const useGeocoding = (): UseGeocodingReturn => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
 
-  const geocode = async (postcode: string): Promise<PostcodeLocation> => {
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
+
+  const geocode = async (postcode: string): Promise<PostcodeLocation | null> => {
+    controllerRef.current?.abort();
+
+    const controller = new AbortController();
+    controllerRef.current = controller;
+
     setIsLoading(true);
     setError(null);
 
     try {
       const strippedPostcode = postcode.replace(/\s/g, '');
       const response = await fetch(
-        `https://api.postcodes.io/postcodes/${strippedPostcode}`
+        `https://api.postcodes.io/postcodes/${strippedPostcode}`,
+        { signal: controller.signal }
       );
 
       if (response.status === 404) {
@@ -89,6 +102,10 @@ export const useGeocoding = (): UseGeocodingReturn => {
         region: result.region || '',
       };
     } catch (caughtError) {
+      if (caughtError instanceof DOMException && caughtError.name === 'AbortError') {
+        return null;
+      }
+
       const errorMessage =
         caughtError instanceof Error && caughtError.message === 'NOT_FOUND'
           ? 'That postcode was not found. Please check and try again.'
@@ -97,7 +114,9 @@ export const useGeocoding = (): UseGeocodingReturn => {
       setError(errorMessage);
       throw new Error(errorMessage, { cause: caughtError });
     } finally {
-      setIsLoading(false);
+      if (controllerRef.current === controller) {
+        setIsLoading(false);
+      }
     }
   };
 
