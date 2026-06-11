@@ -1,6 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
+import { z } from 'zod';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config';
-import { RISK_LEVEL, type RiskAssessment, type RiskLevel } from '../src/types';
+import { RISK_LEVEL, type RiskAssessment } from '../src/types';
 
 interface RiskAssessmentRequest {
   postcode: string;
@@ -33,46 +34,26 @@ const parseRiskAssessmentRequest = (value: unknown): RiskAssessmentRequest => {
   };
 };
 
-const isRiskLevel = (value: unknown): value is RiskLevel =>
-  value === RISK_LEVEL.LOW || value === RISK_LEVEL.MEDIUM || value === RISK_LEVEL.HIGH;
+const riskLevelSchema = z.enum([
+  RISK_LEVEL.LOW,
+  RISK_LEVEL.MEDIUM,
+  RISK_LEVEL.HIGH,
+]);
 
-const parseRiskScore = (value: unknown): RiskAssessment['floodRisk'] => {
-  if (!isRecord(value) || !isRiskLevel(value.level) || typeof value.score !== 'number') {
-    throw new Error('INVALID_RESPONSE');
-  }
+const riskScoreSchema = z.object({
+  level: riskLevelSchema,
+  score: z.number().min(1).max(10),
+});
 
-  return {
-    level: value.level,
-    score: value.score,
-  };
-};
-
-const parseRiskAssessment = (value: unknown, postcode: string): RiskAssessment => {
-  if (!isRecord(value)) {
-    throw new Error('INVALID_RESPONSE');
-  }
-
-  const keyFactors = value.keyFactors;
-
-  if (
-    typeof value.overallScore !== 'number' ||
-    typeof value.summary !== 'string' ||
-    !Array.isArray(keyFactors) ||
-    !keyFactors.every((factor) => typeof factor === 'string')
-  ) {
-    throw new Error('INVALID_RESPONSE');
-  }
-
-  return {
-    postcode,
-    floodRisk: parseRiskScore(value.floodRisk),
-    fireRisk: parseRiskScore(value.fireRisk),
-    subsidenceRisk: parseRiskScore(value.subsidenceRisk),
-    overallScore: value.overallScore,
-    keyFactors,
-    summary: value.summary,
-  };
-};
+const riskAssessmentResponseSchema = z.object({
+  postcode: z.string().min(1),
+  floodRisk: riskScoreSchema,
+  fireRisk: riskScoreSchema,
+  subsidenceRisk: riskScoreSchema,
+  overallScore: z.number().min(1).max(10),
+  summary: z.string().min(1),
+  keyFactors: z.array(z.string()).length(3),
+});
 
 export default async function handler(request: Request) {
   if (request.method !== 'POST') {
@@ -146,7 +127,22 @@ Respond with valid JSON only. No markdown, no code blocks, just the JSON object.
     const responseText =
       message.content[0].type === 'text' ? message.content[0].text : '';
 
-    const assessment = parseRiskAssessment(JSON.parse(responseText), body.postcode);
+    const parsedResponse = JSON.parse(responseText);
+    const responseWithPostcode = {
+      postcode: body.postcode,
+      ...parsedResponse,
+    };
+    const validationResult = riskAssessmentResponseSchema.safeParse(responseWithPostcode);
+
+    if (!validationResult.success) {
+      console.error('Risk assessment validation error:', validationResult.error);
+      return Response.json(
+        { data: null, error: 'Failed to generate risk assessment' },
+        { status: 500 }
+      );
+    }
+
+    const assessment: RiskAssessment = validationResult.data;
 
     return Response.json({ data: assessment, error: null });
   } catch (error) {
