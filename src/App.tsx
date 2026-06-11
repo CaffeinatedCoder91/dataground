@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { AddressSearch } from './components/AddressSearch';
 import { MapView } from './components/MapView';
 import { RiskReport } from './components/RiskReport';
+import { RiskReportSkeleton } from './components/RiskReportSkeleton';
 import { LoadingState } from './components/LoadingState';
 import { ErrorBanner } from './components/ErrorBanner';
 import { useGeocoding } from './hooks/useGeocoding';
@@ -107,8 +108,12 @@ const App = () => {
               />
             )}
 
-            {(status === 'geocoding' || status === 'analysing') && (
+            {status === 'geocoding' && (
               <LoadingState status={status} />
+            )}
+
+            {status === 'analysing' && (
+              <RiskReportSkeleton />
             )}
 
             {riskAssessment && currentLocation && status === 'complete' && (

@@ -84,6 +84,25 @@ export const sizing = stylex.defineVars({
   full: '100%',
   errorBoundaryContentMaxWidth: '500px',
   mapMobileHeight: '300px',
+  skeletonCardHeight: '120px',
+  skeletonHeadingHeight: '32px',
+  skeletonHeadingWidth: '60%',
+  skeletonKeyFactorHeight: '14px',
+  skeletonKeyFactorsTitleHeight: '16px',
+  skeletonKeyFactorsTitleWidth: '100px',
+  skeletonLineHeight: '14px',
+  skeletonRegionHeight: '16px',
+  skeletonRegionWidth: '40%',
+  skeletonScoreLabelHeight: '14px',
+  skeletonScoreLabelWidth: '120px',
+  skeletonScoreValueHeight: '48px',
+  skeletonScoreValueWidth: '100px',
+  skeletonShortLineWidth: '80%',
+});
+
+export const opacity = stylex.defineVars({
+  skeletonPulseHigh: '0.6',
+  skeletonPulseLow: '0.3',
 });
 
 export const margin = stylex.defineVars({
