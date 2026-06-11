@@ -1,6 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config';
+import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt';
 import { RISK_LEVEL, type RiskAssessment } from '../src/types';
 
 interface RiskAssessmentRequest {
@@ -83,33 +84,12 @@ export default async function handler(request: Request) {
 
   const client = new Anthropic({ apiKey });
 
-  const prompt = `You are a property risk assessment expert. Analyse the following UK property location and provide a risk assessment for flood, fire, and subsidence risks.
-
-Location details:
-- Postcode: ${body.postcode}
-- Region: ${body.region}
-- Coordinates: ${body.latitude}, ${body.longitude}
-
-Based on geographic and climatic knowledge of this area, provide a JSON response with the following exact structure (no other text):
-{
-    "floodRisk": {
-    "level": "low" | "medium" | "high",
-    "score": number between 1-10
-  },
-  "fireRisk": {
-    "level": "low" | "medium" | "high",
-    "score": number between 1-10
-  },
-  "subsidenceRisk": {
-    "level": "low" | "medium" | "high",
-    "score": number between 1-10
-  },
-  "overallScore": number between 1-10,
-  "summary": "2-3 sentence summary of the overall risk profile",
-  "keyFactors": ["factor 1", "factor 2", "factor 3"]
-}
-
-Respond with valid JSON only. No markdown, no code blocks, just the JSON object.`;
+  const prompt = buildRiskAssessmentPrompt(
+    body.postcode,
+    body.region,
+    body.latitude,
+    body.longitude
+  );
 
   try {
     const message = await client.messages.create({
