@@ -1,5 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { useEffect, useRef, useState } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
 import { AddressSearch } from './components/AddressSearch';
 import { MapView } from './components/MapView';
@@ -88,41 +89,43 @@ const App = () => {
   const isLoading = status === 'geocoding' || status === 'analysing';
 
   return (
-    <div {...stylex.props(styles.container)}>
-      <Header />
-      <div {...stylex.props(styles.content)}>
-        <div {...stylex.props(styles.leftPanel)}>
-          <AddressSearch
-            onSearch={handleSearch}
-            isLoading={isLoading}
-            inputReference={inputRef}
-          />
-
-          {errorMessage && (
-            <ErrorBanner
-              message={errorMessage}
-              onDismiss={handleDismissError}
+    <ErrorBoundary>
+      <div {...stylex.props(styles.container)}>
+        <Header />
+        <div {...stylex.props(styles.content)}>
+          <div {...stylex.props(styles.leftPanel)}>
+            <AddressSearch
+              onSearch={handleSearch}
+              isLoading={isLoading}
+              inputReference={inputRef}
             />
-          )}
 
-          {(status === 'geocoding' || status === 'analysing') && (
-            <LoadingState status={status} />
-          )}
+            {errorMessage && (
+              <ErrorBanner
+                message={errorMessage}
+                onDismiss={handleDismissError}
+              />
+            )}
 
-          {riskAssessment && currentLocation && status === 'complete' && (
-            <RiskReport
-              assessment={riskAssessment}
-              postcode={currentLocation.postcode}
-              region={currentLocation.region}
-            />
-          )}
-        </div>
+            {(status === 'geocoding' || status === 'analysing') && (
+              <LoadingState status={status} />
+            )}
 
-        <div {...stylex.props(styles.rightPanel)}>
-          <MapView coordinates={coordinates} />
+            {riskAssessment && currentLocation && status === 'complete' && (
+              <RiskReport
+                assessment={riskAssessment}
+                postcode={currentLocation.postcode}
+                region={currentLocation.region}
+              />
+            )}
+          </div>
+
+          <div {...stylex.props(styles.rightPanel)}>
+            <MapView coordinates={coordinates} />
+          </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 };
 

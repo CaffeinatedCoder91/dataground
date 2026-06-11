@@ -82,6 +82,7 @@ export const borderRadius = stylex.defineVars({
 export const sizing = stylex.defineVars({
   extraSmall: '24px',
   full: '100%',
+  errorBoundaryContentMaxWidth: '500px',
   mapMobileHeight: '300px',
 });
 
