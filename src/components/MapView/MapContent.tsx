@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Coordinates } from '../../types';
+import { DEFAULT_MAP_LATITUDE, DEFAULT_MAP_LONGITUDE, DEFAULT_MAP_ZOOM, MAP_STYLE, RESULT_MAP_ZOOM } from '../../constants';
 import { styles } from './MapView.stylex';
 
 interface MapContentProps {
@@ -22,9 +23,9 @@ export const MapContent = ({ coordinates, token }: MapContentProps) => {
 
     mapInstance.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
-      center: [-3.5, 54.5],
-      zoom: 5,
+      style: MAP_STYLE,
+      center: [DEFAULT_MAP_LONGITUDE, DEFAULT_MAP_LATITUDE],
+      zoom: DEFAULT_MAP_ZOOM,
     });
 
     return () => {
@@ -52,7 +53,7 @@ export const MapContent = ({ coordinates, token }: MapContentProps) => {
 
     map.flyTo({
       center: [coordinates.longitude, coordinates.latitude],
-      zoom: 13,
+      zoom: RESULT_MAP_ZOOM,
       duration: 1500,
     });
   }, [coordinates]);

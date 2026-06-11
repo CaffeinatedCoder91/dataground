@@ -105,7 +105,7 @@ describe('useGeocoding', () => {
     vi.mocked(fetch).mockReturnValue(fetchPromise);
 
     const { result } = renderHook(() => useGeocoding());
-    let geocodePromise: Promise<PostcodeLocation> | null = null;
+    let geocodePromise: Promise<PostcodeLocation | null> | null = null;
 
     act(() => {
       geocodePromise = result.current.geocode('SW1A1AA');

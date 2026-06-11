@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { GEOCODING_BASE_URL, HTTP_STATUS_NOT_FOUND } from '../constants';
 import type { PostcodeLocation } from '../types';
 
 interface UseGeocodingReturn {
@@ -73,11 +74,11 @@ export const useGeocoding = (): UseGeocodingReturn => {
     try {
       const strippedPostcode = postcode.replace(/\s/g, '');
       const response = await fetch(
-        `https://api.postcodes.io/postcodes/${strippedPostcode}`,
+        `${GEOCODING_BASE_URL}/${strippedPostcode}`,
         { signal: controller.signal }
       );
 
-      if (response.status === 404) {
+      if (response.status === HTTP_STATUS_NOT_FOUND) {
         throw new Error('NOT_FOUND');
       }
 

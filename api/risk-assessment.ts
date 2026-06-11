@@ -2,6 +2,17 @@ import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config';
 import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt';
+import {
+  CLAUDE_TEMPERATURE_DETERMINISTIC,
+  FIRST_CLAUDE_MESSAGE_CONTENT_INDEX,
+  HTTP_STATUS_BAD_REQUEST,
+  HTTP_STATUS_INTERNAL_SERVER_ERROR,
+  HTTP_STATUS_METHOD_NOT_ALLOWED,
+  KEY_FACTORS_COUNT,
+  MAX_OVERALL_SCORE,
+  MIN_OVERALL_SCORE,
+  MIN_REQUIRED_TEXT_LENGTH,
+} from '../src/constants';
 import { RISK_LEVEL, type RiskAssessment } from '../src/types';
 
 interface RiskAssessmentRequest {
@@ -43,24 +54,24 @@ const riskLevelSchema = z.enum([
 
 const riskScoreSchema = z.object({
   level: riskLevelSchema,
-  score: z.number().min(1).max(10),
+  score: z.number().min(MIN_OVERALL_SCORE).max(MAX_OVERALL_SCORE),
 });
 
 const riskAssessmentResponseSchema = z.object({
-  postcode: z.string().min(1),
+  postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
   floodRisk: riskScoreSchema,
   fireRisk: riskScoreSchema,
   subsidenceRisk: riskScoreSchema,
-  overallScore: z.number().min(1).max(10),
-  summary: z.string().min(1),
-  keyFactors: z.array(z.string()).length(3),
+  overallScore: z.number().min(MIN_OVERALL_SCORE).max(MAX_OVERALL_SCORE),
+  summary: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+  keyFactors: z.array(z.string()).length(KEY_FACTORS_COUNT),
 });
 
 export default async function handler(request: Request) {
   if (request.method !== 'POST') {
     return Response.json(
       { data: null, error: 'Method not allowed' },
-      { status: 405 }
+      { status: HTTP_STATUS_METHOD_NOT_ALLOWED }
     );
   }
 
@@ -70,7 +81,7 @@ export default async function handler(request: Request) {
   } catch {
     return Response.json(
       { data: null, error: 'Invalid request body' },
-      { status: 400 }
+      { status: HTTP_STATUS_BAD_REQUEST }
     );
   }
 
@@ -78,7 +89,7 @@ export default async function handler(request: Request) {
   if (!apiKey) {
     return Response.json(
       { data: null, error: 'API key not configured' },
-      { status: 500 }
+      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
     );
   }
 
@@ -95,7 +106,7 @@ export default async function handler(request: Request) {
     const message = await client.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: MAX_TOKENS,
-      temperature: 0,
+      temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
       messages: [
         {
           role: 'user',
@@ -105,7 +116,9 @@ export default async function handler(request: Request) {
     });
 
     const responseText =
-      message.content[0].type === 'text' ? message.content[0].text : '';
+      message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].type === 'text'
+        ? message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].text
+        : '';
 
     const parsedResponse = JSON.parse(responseText);
     const responseWithPostcode = {
@@ -118,7 +131,7 @@ export default async function handler(request: Request) {
       console.error('Risk assessment validation error:', validationResult.error);
       return Response.json(
         { data: null, error: 'Failed to generate risk assessment' },
-        { status: 500 }
+        { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
       );
     }
 
@@ -129,7 +142,7 @@ export default async function handler(request: Request) {
     console.error('Risk assessment error:', error instanceof Error ? error.message : 'Unknown error');
     return Response.json(
       { data: null, error: 'Failed to generate risk assessment' },
-      { status: 500 }
+      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
     );
   }
 }
