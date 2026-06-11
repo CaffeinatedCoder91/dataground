@@ -8,6 +8,7 @@ import { LoadingState } from './components/LoadingState';
 import { ErrorBanner } from './components/ErrorBanner';
 import { useGeocoding } from './hooks/useGeocoding';
 import { useRiskAssessment } from './hooks/useRiskAssessment';
+import { useResultsCache } from './hooks/useResultsCache';
 import type { Coordinates, PostcodeLocation, RiskAssessment } from './types';
 import { styles } from './App.stylex';
 
@@ -22,16 +23,34 @@ const App = () => {
 
   const { geocode } = useGeocoding();
   const { assess } = useRiskAssessment();
+  const { getCachedResult, setCachedResult } = useResultsCache();
 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSearch = async (postcode: string) => {
-    setStatus('geocoding');
     setErrorMessage(null);
     setRiskAssessment(null);
 
+    const cachedResult = getCachedResult(postcode);
+    if (cachedResult) {
+      setCurrentLocation(cachedResult.location);
+      setCoordinates({
+        latitude: cachedResult.location.latitude,
+        longitude: cachedResult.location.longitude,
+      });
+      setRiskAssessment(cachedResult.assessment);
+      setStatus('complete');
+      return;
+    }
+
+    setStatus('geocoding');
+
     try {
       const location = await geocode(postcode);
+      if (!location) {
+        return;
+      }
+
       setCurrentLocation(location);
       setCoordinates({
         latitude: location.latitude,
@@ -42,6 +61,7 @@ const App = () => {
 
       const assessment = await assess(location);
       setRiskAssessment(assessment);
+      setCachedResult(postcode, { location, assessment });
       setStatus('complete');
     } catch (caughtError) {
       const error = caughtError instanceof Error
