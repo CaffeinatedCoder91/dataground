@@ -15,6 +15,7 @@ export const HTTP_STATUS_NOT_FOUND = 404;
 // Timing constants
 export const DEBOUNCE_DELAY_MS = 300;
 export const REQUEST_TIMEOUT_MS = 10000;
+export const TRANSITION_DURATION_FAST = '0.2s';
 
 // Validation constants
 export const MAX_OVERALL_SCORE = 10;
@@ -25,3 +26,7 @@ export const MIN_REQUIRED_TEXT_LENGTH = 1;
 // Claude constants
 export const CLAUDE_TEMPERATURE_DETERMINISTIC = 0;
 export const FIRST_CLAUDE_MESSAGE_CONTENT_INDEX = 0;
+
+// Storage constants
+export const RECENT_SEARCHES_STORAGE_KEY = 'dataground-recent-searches';
+export const MAX_RECENT_SEARCHES = 3;

@@ -8,9 +8,11 @@ import { RiskReport } from './components/RiskReport';
 import { RiskReportSkeleton } from './components/RiskReportSkeleton';
 import { LoadingState } from './components/LoadingState';
 import { ErrorBanner } from './components/ErrorBanner';
+import { RecentSearches } from './components/RecentSearches/RecentSearches';
 import { useGeocoding } from './hooks/useGeocoding';
 import { useRiskAssessment } from './hooks/useRiskAssessment';
 import { useResultsCache } from './hooks/useResultsCache';
+import { useRecentSearches } from './hooks/useRecentSearches';
 import type { Coordinates, PostcodeLocation, RiskAssessment } from './types';
 import { styles } from './App.stylex';
 
@@ -26,6 +28,7 @@ const App = () => {
   const { geocode } = useGeocoding();
   const { assess } = useRiskAssessment();
   const { getCachedResult, setCachedResult } = useResultsCache();
+  const { recentSearches, addRecentSearch, clearRecentSearches } = useRecentSearches();
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +45,7 @@ const App = () => {
       });
       setRiskAssessment(cachedResult.assessment);
       setStatus('complete');
+      addRecentSearch(postcode);
       return;
     }
 
@@ -65,6 +69,7 @@ const App = () => {
       setRiskAssessment(assessment);
       setCachedResult(postcode, { location, assessment });
       setStatus('complete');
+      addRecentSearch(postcode);
     } catch (caughtError) {
       const error = caughtError instanceof Error
         ? caughtError.message
@@ -99,6 +104,12 @@ const App = () => {
               onSearch={handleSearch}
               isLoading={isLoading}
               inputReference={inputRef}
+            />
+
+            <RecentSearches
+              recentSearches={recentSearches}
+              onSelect={handleSearch}
+              onClear={clearRecentSearches}
             />
 
             {errorMessage && (
