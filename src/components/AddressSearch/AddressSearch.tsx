@@ -1,5 +1,6 @@
 import * as stylex from '@stylexjs/stylex';
 import { useState, type Ref } from 'react';
+import { formatPostcode } from '../../utils/formatPostcode';
 import { styles } from './AddressSearch.stylex';
 
 interface AddressSearchProps {
@@ -31,8 +32,9 @@ export const AddressSearch = ({ onSearch, isLoading, inputReference }: AddressSe
   };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setPostcode(event.target.value);
-    if (showValidationError && event.target.value.trim()) {
+    const formatted = formatPostcode(event.target.value);
+    setPostcode(formatted);
+    if (showValidationError && formatted.trim()) {
       setShowValidationError(false);
     }
   };
