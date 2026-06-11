@@ -25,4 +25,10 @@ export const styles = stylex.create({
     lineHeight: lineHeight.normal,
     textAlign: 'center',
   },
+  loadingFallback: {
+    width: sizing.full,
+    height: sizing.full,
+    minHeight: sizing.mapMobileHeight,
+    backgroundColor: colours.backgroundSecondary,
+  },
 });
