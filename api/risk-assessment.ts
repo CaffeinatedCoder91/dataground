@@ -1,3 +1,9 @@
+export const maxDuration = 30;
+
+export const config = {
+  runtime: 'nodejs',
+};
+
 import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config';
