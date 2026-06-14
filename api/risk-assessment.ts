@@ -1,7 +1,7 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { CLAUDE_MODEL, MAX_TOKENS } from './config';
-import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt';
+import { CLAUDE_MODEL, MAX_TOKENS } from './config.js';
+import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt.js';
 import {
   CLAUDE_TEMPERATURE_DETERMINISTIC,
   FIRST_FORWARDED_ADDRESS_INDEX,
@@ -18,8 +18,8 @@ import {
   RATE_LIMIT_MAX_REQUESTS,
   RATE_LIMIT_UNKNOWN_ADDRESS_KEY,
   RATE_LIMIT_WINDOW_MS,
-} from '../src/constants';
-import { RISK_LEVEL, type RiskAssessment } from '../src/types';
+} from '../src/constants/index.js';
+import { RISK_LEVEL, type RiskAssessment } from '../src/types/index.js';
 
 export const maxDuration = 30;
 

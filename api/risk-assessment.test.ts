@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import handler from './risk-assessment';
+import handler from './risk-assessment.js';
 
 const anthropicMessagesCreate = vi.hoisted(() => vi.fn());
 
