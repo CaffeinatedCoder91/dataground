@@ -1,9 +1,3 @@
-export const maxDuration = 30;
-
-export const config = {
-  runtime: 'nodejs',
-};
-
 import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config';
@@ -26,6 +20,12 @@ import {
   RATE_LIMIT_WINDOW_MS,
 } from '../src/constants';
 import { RISK_LEVEL, type RiskAssessment } from '../src/types';
+
+export const maxDuration = 30;
+
+export const config = {
+  runtime: 'nodejs',
+};
 
 interface RiskAssessmentRequest {
   postcode: string;
