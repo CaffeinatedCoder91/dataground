@@ -41,14 +41,58 @@ interface RequestEntry {
 
 const requestCountMap = new Map<string, RequestEntry>();
 
-const getClientAddress = (request: Request): string => {
-  const forwardedFor = request.headers.get('x-forwarded-for');
+interface HeadersWithGetter {
+  get: (headerName: string) => string | null;
+}
+
+interface RequestWithJson {
+  json: () => Promise<unknown>;
+}
+
+const hasHeadersGetter = (value: unknown): value is HeadersWithGetter =>
+  isRecord(value) && typeof value.get === 'function';
+
+const hasJsonMethod = (value: unknown): value is RequestWithJson =>
+  isRecord(value) && typeof value.json === 'function';
+
+const getHeaderValue = (request: unknown, headerName: string): string | null => {
+  if (!isRecord(request)) {
+    return null;
+  }
+
+  const headers = request.headers;
+
+  if (hasHeadersGetter(headers)) {
+    return headers.get(headerName);
+  }
+
+  if (!isRecord(headers)) {
+    return null;
+  }
+
+  const headerValue = headers[headerName];
+  if (typeof headerValue === 'string') {
+    return headerValue;
+  }
+
+  if (
+    Array.isArray(headerValue) &&
+    typeof headerValue[FIRST_FORWARDED_ADDRESS_INDEX] === 'string'
+  ) {
+    return headerValue[FIRST_FORWARDED_ADDRESS_INDEX];
+  }
+
+  return null;
+};
+
+const getClientAddress = (request: unknown): string => {
+  const forwardedFor = getHeaderValue(request, 'x-forwarded-for');
   if (forwardedFor) {
     const forwardedAddresses = forwardedFor.split(',');
     return forwardedAddresses[FIRST_FORWARDED_ADDRESS_INDEX].trim();
   }
 
-  const realAddress = request.headers.get('x-real-ip');
+  const realAddress = getHeaderValue(request, 'x-real-ip');
   if (realAddress) {
     return realAddress;
   }
@@ -99,6 +143,24 @@ if (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const parseRequestBody = async (request: unknown): Promise<unknown> => {
+  if (hasJsonMethod(request)) {
+    return request.json();
+  }
+
+  if (!isRecord(request)) {
+    throw new Error('INVALID_REQUEST');
+  }
+
+  const requestBody = request.body;
+  if (typeof requestBody === 'string') {
+    const parsedBody: unknown = JSON.parse(requestBody);
+    return parsedBody;
+  }
+
+  return requestBody;
+};
 
 const parseRiskAssessmentRequest = (value: unknown): RiskAssessmentRequest => {
   if (!isRecord(value)) {
@@ -160,7 +222,7 @@ export default async function handler(request: Request) {
 
   let body: RiskAssessmentRequest;
   try {
-    body = parseRiskAssessmentRequest(await request.json());
+    body = parseRiskAssessmentRequest(await parseRequestBody(request));
   } catch {
     return Response.json(
       { data: null, error: 'Invalid request body' },
