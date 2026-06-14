@@ -1,4 +1,5 @@
 import * as stylex from '@stylexjs/stylex';
+import { formatPostcode } from '../../utils/formatPostcode';
 import { styles } from './RecentSearches.stylex';
 
 interface RecentSearchesProps {
@@ -27,7 +28,7 @@ export const RecentSearches = ({
             onClick={() => onSelect(postcode)}
             type="button"
           >
-            {postcode}
+            {formatPostcode(postcode)}
           </button>
         ))}
       </div>

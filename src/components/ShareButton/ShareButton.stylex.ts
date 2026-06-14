@@ -1,23 +1,42 @@
 import * as stylex from '@stylexjs/stylex';
-import { colours, spacing, fontSize, fontWeight, borderRadius, borderWidth } from '../../styles/tokens.stylex';
+import {
+  borderRadius,
+  borderWidth,
+  colours,
+  fontSize,
+  fontWeight,
+  outline,
+  spacing,
+} from '../../styles/tokens.stylex';
 
 export const styles = stylex.create({
   button: {
-    backgroundColor: colours.backgroundSecondary,
-    border: `${borderWidth.thin} solid ${colours.borderDefault}`,
+    alignSelf: 'flex-start',
+    backgroundColor: colours.spinner,
+    borderWidth: borderWidth.none,
+    borderStyle: 'none',
     borderRadius: borderRadius.base,
-    padding: `${spacing.small} ${spacing.medium}`,
-    marginTop: spacing.medium,
-    fontSize: fontSize.small,
-    fontWeight: fontWeight.medium,
-    color: colours.textPrimary,
+    color: colours.white,
     cursor: 'pointer',
-    transition: 'background-color 0.2s ease-in-out',
+    fontSize: fontSize.base,
+    fontWeight: fontWeight.semibold,
+    marginTop: spacing.medium,
+    marginBottom: spacing.medium,
+    paddingTop: spacing.medium,
+    paddingRight: spacing.medium,
+    paddingBottom: spacing.medium,
+    paddingLeft: spacing.medium,
     ':hover': {
-      backgroundColor: colours.backgroundPrimary,
+      opacity: '0.9',
     },
-    ':active': {
-      opacity: 0.8,
+    ':focus': {
+      outlineWidth: borderWidth.base,
+      outlineStyle: 'solid',
+      outlineColor: colours.spinner,
+      outlineOffset: outline.offset,
     },
+  },
+  buttonCopied: {
+    color: colours.riskLow,
   },
 });
