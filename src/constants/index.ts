@@ -26,7 +26,15 @@ export const MIN_REQUIRED_TEXT_LENGTH = 1;
 // Claude constants
 export const CLAUDE_TEMPERATURE_DETERMINISTIC = 0;
 export const FIRST_CLAUDE_MESSAGE_CONTENT_INDEX = 0;
+export const FIRST_FORWARDED_ADDRESS_INDEX = 0;
 
 // Storage constants
 export const RECENT_SEARCHES_STORAGE_KEY = 'dataground-recent-searches';
 export const MAX_RECENT_SEARCHES = 3;
+
+// Rate limiting constants
+export const RATE_LIMIT_MAX_REQUESTS = 10;
+export const RATE_LIMIT_WINDOW_MS = 60000;
+export const RATE_LIMIT_INITIAL_REQUEST_COUNT = 1;
+export const RATE_LIMIT_UNKNOWN_ADDRESS_KEY = 'unknown-client';
+export const HTTP_STATUS_TOO_MANY_REQUESTS = 429;

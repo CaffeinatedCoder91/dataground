@@ -4,14 +4,20 @@ import { CLAUDE_MODEL, MAX_TOKENS } from './config';
 import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt';
 import {
   CLAUDE_TEMPERATURE_DETERMINISTIC,
+  FIRST_FORWARDED_ADDRESS_INDEX,
   FIRST_CLAUDE_MESSAGE_CONTENT_INDEX,
   HTTP_STATUS_BAD_REQUEST,
   HTTP_STATUS_INTERNAL_SERVER_ERROR,
   HTTP_STATUS_METHOD_NOT_ALLOWED,
+  HTTP_STATUS_TOO_MANY_REQUESTS,
   KEY_FACTORS_COUNT,
   MAX_OVERALL_SCORE,
   MIN_OVERALL_SCORE,
   MIN_REQUIRED_TEXT_LENGTH,
+  RATE_LIMIT_INITIAL_REQUEST_COUNT,
+  RATE_LIMIT_MAX_REQUESTS,
+  RATE_LIMIT_UNKNOWN_ADDRESS_KEY,
+  RATE_LIMIT_WINDOW_MS,
 } from '../src/constants';
 import { RISK_LEVEL, type RiskAssessment } from '../src/types';
 
@@ -20,6 +26,69 @@ interface RiskAssessmentRequest {
   latitude: number;
   longitude: number;
   region: string;
+}
+
+interface RequestEntry {
+  count: number;
+  timestamp: number;
+}
+
+const requestCountMap = new Map<string, RequestEntry>();
+
+const getClientAddress = (request: Request): string => {
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    const forwardedAddresses = forwardedFor.split(',');
+    return forwardedAddresses[FIRST_FORWARDED_ADDRESS_INDEX].trim();
+  }
+
+  const realAddress = request.headers.get('x-real-ip');
+  if (realAddress) {
+    return realAddress;
+  }
+
+  return RATE_LIMIT_UNKNOWN_ADDRESS_KEY;
+};
+
+const isRequestAllowed = (clientAddress: string): boolean => {
+  const now = Date.now();
+  const entry = requestCountMap.get(clientAddress);
+
+  if (!entry) {
+    requestCountMap.set(clientAddress, { count: RATE_LIMIT_INITIAL_REQUEST_COUNT, timestamp: now });
+    return true;
+  }
+
+  const timeSinceFirstRequest = now - entry.timestamp;
+
+  if (timeSinceFirstRequest > RATE_LIMIT_WINDOW_MS) {
+    requestCountMap.set(clientAddress, { count: RATE_LIMIT_INITIAL_REQUEST_COUNT, timestamp: now });
+    return true;
+  }
+
+  entry.count += 1;
+
+  return entry.count <= RATE_LIMIT_MAX_REQUESTS;
+};
+
+const cleanupOldEntries = (): void => {
+  const now = Date.now();
+
+  for (const [clientAddress, entry] of requestCountMap.entries()) {
+    const timeSinceFirstRequest = now - entry.timestamp;
+    if (timeSinceFirstRequest > RATE_LIMIT_WINDOW_MS) {
+      requestCountMap.delete(clientAddress);
+    }
+  }
+};
+
+const cleanupTimer = setInterval(cleanupOldEntries, RATE_LIMIT_WINDOW_MS);
+if (
+  typeof cleanupTimer === 'object' &&
+  'unref' in cleanupTimer &&
+  typeof cleanupTimer.unref === 'function'
+) {
+  cleanupTimer.unref();
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -75,6 +144,14 @@ export default async function handler(request: Request) {
     );
   }
 
+  const clientAddress = getClientAddress(request);
+  if (!isRequestAllowed(clientAddress)) {
+    return Response.json(
+      { data: null, error: 'Too many requests. Please wait a moment and try again.' },
+      { status: HTTP_STATUS_TOO_MANY_REQUESTS }
+    );
+  }
+
   let body: RiskAssessmentRequest;
   try {
     body = parseRiskAssessmentRequest(await request.json());
@@ -120,10 +197,10 @@ export default async function handler(request: Request) {
         ? message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].text
         : '';
 
-    const parsedResponse = JSON.parse(responseText);
+    const parsedResponse: unknown = JSON.parse(responseText);
     const responseWithPostcode = {
       postcode: body.postcode,
-      ...parsedResponse,
+      ...(isRecord(parsedResponse) ? parsedResponse : {}),
     };
     const validationResult = riskAssessmentResponseSchema.safeParse(responseWithPostcode);
 

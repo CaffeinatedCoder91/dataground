@@ -7,7 +7,6 @@ import {
   fontWeight,
   borderWidth,
 } from '../../styles/tokens.stylex';
-import { TRANSITION_DURATION_FAST } from '../../constants';
 
 export const styles = stylex.create({
   container: {
@@ -39,7 +38,7 @@ export const styles = stylex.create({
     cursor: 'pointer',
     fontSize: fontSize.small,
     color: colours.textPrimary,
-    transition: `background-color ${TRANSITION_DURATION_FAST}, border-color ${TRANSITION_DURATION_FAST}`,
+    transition: 'background-color 0.15s ease-in-out, border-color 0.15s ease-in-out',
     ':hover': {
       backgroundColor: colours.borderDefault,
     },

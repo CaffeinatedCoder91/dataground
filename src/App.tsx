@@ -9,6 +9,7 @@ import { RiskReportSkeleton } from './components/RiskReportSkeleton';
 import { LoadingState } from './components/LoadingState';
 import { ErrorBanner } from './components/ErrorBanner';
 import { RecentSearches } from './components/RecentSearches/RecentSearches';
+import { ShareButton } from './components/ShareButton/ShareButton';
 import { useGeocoding } from './hooks/useGeocoding';
 import { useRiskAssessment } from './hooks/useRiskAssessment';
 import { useResultsCache } from './hooks/useResultsCache';
@@ -46,6 +47,7 @@ const App = () => {
       setRiskAssessment(cachedResult.assessment);
       setStatus('complete');
       addRecentSearch(postcode);
+      updateUrlParameter(postcode);
       return;
     }
 
@@ -70,6 +72,7 @@ const App = () => {
       setCachedResult(postcode, { location, assessment });
       setStatus('complete');
       addRecentSearch(postcode);
+      updateUrlParameter(postcode);
     } catch (caughtError) {
       const error = caughtError instanceof Error
         ? caughtError.message
@@ -78,6 +81,14 @@ const App = () => {
       setErrorMessage(error);
       setStatus('error');
     }
+  };
+
+  const updateUrlParameter = (postcode: string) => {
+    const cleanedPostcode = postcode.replace(/\s/g, '');
+    const baseUrl = window.location.origin + window.location.pathname;
+    const url = new URL(baseUrl);
+    url.searchParams.set('postcode', cleanedPostcode);
+    window.history.replaceState({}, '', url.toString());
   };
 
   const handleDismissError = () => {
@@ -91,6 +102,15 @@ const App = () => {
       inputRef.current?.focus();
     }
   }, [status]);
+
+  useEffect(() => {
+    const searchParameters = new URLSearchParams(window.location.search);
+    const postcodeParameter = searchParameters.get('postcode');
+
+    if (postcodeParameter) {
+      handleSearch(postcodeParameter);
+    }
+  }, []);
 
   const isLoading = status === 'geocoding' || status === 'analysing';
 
@@ -128,11 +148,14 @@ const App = () => {
             )}
 
             {riskAssessment && currentLocation && status === 'complete' && (
-              <RiskReport
-                assessment={riskAssessment}
-                postcode={currentLocation.postcode}
-                region={currentLocation.region}
-              />
+              <>
+                <RiskReport
+                  assessment={riskAssessment}
+                  postcode={currentLocation.postcode}
+                  region={currentLocation.region}
+                />
+                <ShareButton postcode={currentLocation.postcode} />
+              </>
             )}
           </div>
 
