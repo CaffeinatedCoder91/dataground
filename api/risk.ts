@@ -118,17 +118,28 @@ const riskRequestSchema = z.object({
 });
 
 const parseRiskRequest = async (request: Request): Promise<OperationResult<RiskRequest>> => {
-  return request.json().then(
-    (body) => {
-      const validationResult = riskRequestSchema.safeParse(body);
-      if (!validationResult.success) {
-        return { data: null, error: 'Invalid request body' };
-      }
-
-      return { data: validationResult.data, error: null };
-    },
+  const requestTextResult = await request.text().then<OperationResult<string>, OperationResult<string>>(
+    (requestText) => ({ data: requestText, error: null }),
     () => ({ data: null, error: 'Invalid request body' })
   );
+
+  if (!requestTextResult.data) {
+    return { data: null, error: requestTextResult.error };
+  }
+
+  return Promise.resolve()
+    .then(() => JSON.parse(requestTextResult.data || ''))
+    .then<OperationResult<RiskRequest>, OperationResult<RiskRequest>>(
+      (jsonData) => {
+        const validationResult = riskRequestSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: 'Invalid request body' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Invalid request body' })
+    );
 };
 
 const riskLevelSchema = z.enum([
@@ -151,6 +162,8 @@ const riskAssessmentResponseSchema = z.object({
   summary: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
   keyFactors: z.array(z.string()).length(KEY_FACTORS_COUNT),
 });
+
+const claudeRiskAssessmentSchema = riskAssessmentResponseSchema.omit({ postcode: true });
 
 const positionSchema = z.array(z.number()).min(2);
 const linearRingSchema = z.array(positionSchema);
@@ -192,6 +205,82 @@ const floodWarningResponseSchema = z.object({
 type FloodAreaResponse = z.infer<typeof floodAreaResponseSchema>;
 type FloodWarningResponse = z.infer<typeof floodWarningResponseSchema>;
 
+const parseFloodAreaResponse = async (response: Response): Promise<OperationResult<FloodAreaResponse>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
+  );
+
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
+
+  return Promise.resolve()
+    .then(() => JSON.parse(responseTextResult.data || ''))
+    .then<OperationResult<FloodAreaResponse>, OperationResult<FloodAreaResponse>>(
+      (jsonData) => {
+        const validationResult = floodAreaResponseSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: 'Environment Agency flood data could not be read.' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
+    );
+};
+
+const parseFloodWarningResponse = async (response: Response): Promise<OperationResult<FloodWarningResponse>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: 'Environment Agency flood warnings could not be read.' })
+  );
+
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
+
+  return Promise.resolve()
+    .then(() => JSON.parse(responseTextResult.data || ''))
+    .then<OperationResult<FloodWarningResponse>, OperationResult<FloodWarningResponse>>(
+      (jsonData) => {
+        const validationResult = floodWarningResponseSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: 'Environment Agency flood warnings could not be read.' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Environment Agency flood warnings could not be read.' })
+    );
+};
+
+const parseClaudeAssessment = async (
+  responseText: string,
+  postcode: string
+): Promise<OperationResult<RiskAssessment>> => {
+  return Promise.resolve()
+    .then(() => JSON.parse(responseText))
+    .then<OperationResult<RiskAssessment>, OperationResult<RiskAssessment>>(
+      (jsonData) => {
+        const validationResult = claudeRiskAssessmentSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          console.error('Risk assessment validation error:', validationResult.error);
+          return { data: null, error: 'Failed to generate risk assessment' };
+        }
+
+        return {
+          data: {
+            postcode,
+            ...validationResult.data,
+          },
+          error: null,
+        };
+      },
+      () => ({ data: null, error: 'Failed to generate risk assessment' })
+    );
+};
+
 const fetchFloodRisk = async (
   latitude: number,
   longitude: number
@@ -229,17 +318,7 @@ const fetchFloodRisk = async (
     return emptyFloodRiskData('Environment Agency flood data is unavailable right now.');
   }
 
-  const areaDataResult = await response.json().then<OperationResult<FloodAreaResponse>, OperationResult<FloodAreaResponse>>(
-    (data) => {
-      const validationResult = floodAreaResponseSchema.safeParse(data);
-      if (!validationResult.success) {
-        return { data: null, error: 'Environment Agency flood data could not be read.' };
-      }
-
-      return { data: validationResult.data, error: null };
-    },
-    () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
-  );
+  const areaDataResult = await parseFloodAreaResponse(response);
 
   if (!areaDataResult.data) {
     return emptyFloodRiskData(areaDataResult.error);
@@ -275,17 +354,7 @@ const fetchFloodRisk = async (
     } else if (!warningResponseResult.data.ok) {
       floodError = 'Environment Agency flood warnings are unavailable right now.';
     } else {
-      const warningDataResult = await warningResponseResult.data.json().then<OperationResult<FloodWarningResponse>, OperationResult<FloodWarningResponse>>(
-        (warningData) => {
-          const validationResult = floodWarningResponseSchema.safeParse(warningData);
-          if (!validationResult.success) {
-            return { data: null, error: 'Environment Agency flood warnings could not be read.' };
-          }
-
-          return { data: validationResult.data, error: null };
-        },
-        () => ({ data: null, error: 'Environment Agency flood warnings could not be read.' })
-      );
+      const warningDataResult = await parseFloodWarningResponse(warningResponseResult.data);
 
       if (!warningDataResult.data) {
         floodError = warningDataResult.error;
@@ -366,56 +435,43 @@ async function POST(request: Request) {
   );
 
   const assessmentResult = await Promise.all([
-      client.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: MAX_TOKENS,
-        temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
-      fetchFloodRisk(body.latitude, body.longitude),
-    ]).then<OperationResult<RiskResponseData>, OperationResult<RiskResponseData>>(
-      async ([message, floodData]) => {
-        const responseText =
-          message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].type === 'text'
-            ? message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].text
-            : '';
+    client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: MAX_TOKENS,
+      temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    }),
+    fetchFloodRisk(body.latitude, body.longitude),
+  ]).then<OperationResult<RiskResponseData>, OperationResult<RiskResponseData>>(
+    async ([message, floodData]) => {
+      const responseText =
+        message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].type === 'text'
+          ? message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].text
+          : '';
 
-        const parsedResponse = await Promise.resolve()
-          .then(() => JSON.parse(responseText))
-          .then(
-            (jsonData) => jsonData,
-            () => null
-          );
-
-        const validationResult = riskAssessmentResponseSchema.safeParse({
-          postcode: body.postcode,
-          ...(parsedResponse && typeof parsedResponse === 'object' ? parsedResponse : {}),
-        });
-
-        if (!validationResult.success) {
-          console.error('Risk assessment validation error:', validationResult.error);
-          return { data: null, error: 'Failed to generate risk assessment' };
-        }
-
-        const assessment: RiskAssessment = validationResult.data;
-        return {
-          data: {
-            assessment,
-            floodData,
-          },
-          error: null,
-        };
-      },
-      (error: Error) => {
-        console.error('Risk assessment error:', error.message);
-        return { data: null, error: 'Failed to generate risk assessment' };
+      const assessmentParseResult = await parseClaudeAssessment(responseText, body.postcode);
+      if (!assessmentParseResult.data) {
+        return { data: null, error: assessmentParseResult.error };
       }
-    );
+
+      return {
+        data: {
+          assessment: assessmentParseResult.data,
+          floodData,
+        },
+        error: null,
+      };
+    },
+    (error: Error) => {
+      console.error('Risk assessment error:', error.message);
+      return { data: null, error: 'Failed to generate risk assessment' };
+    }
+  );
 
   if (!assessmentResult.data) {
     return Response.json(

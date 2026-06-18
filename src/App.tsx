@@ -119,10 +119,14 @@ const App = () => {
 
     setStatus('analysing');
 
-    const assessmentResult = await assess(location).then<OperationResult<RiskAssessmentResult>, OperationResult<RiskAssessmentResult>>(
-      (result) => ({ data: result, error: null }),
-      (error: Error) => ({ data: null, error: error.message })
-    );
+    const [assessmentResult, geology, amenities] = await Promise.all([
+      assess(location).then<OperationResult<RiskAssessmentResult>, OperationResult<RiskAssessmentResult>>(
+        (result) => ({ data: result, error: null }),
+        (error: Error) => ({ data: null, error: error.message })
+      ),
+      fetchGeologyData(location.latitude, location.longitude),
+      fetchAmenitiesData(location.latitude, location.longitude),
+    ]);
 
     if (!assessmentResult.data) {
       setErrorMessage(assessmentResult.error || 'An unexpected error occurred');
@@ -133,12 +137,6 @@ const App = () => {
     const result = assessmentResult.data;
     setRiskAssessment(result.assessment);
     setFloodData(result.floodData);
-
-    const [geology, amenities] = await Promise.all([
-      fetchGeologyData(location.latitude, location.longitude),
-      fetchAmenitiesData(location.latitude, location.longitude),
-    ]);
-
     setGeologyData(geology);
     setAmenitiesData(amenities);
     setCachedResult(postcode, {

@@ -80,8 +80,15 @@ export interface Amenity {
   type: string;
 }
 
+export interface AmenityCategory {
+  label: string;
+  types: string[];
+  amenities: Amenity[];
+}
+
 export interface AmenitiesData {
   amenities: Amenity[];
+  categories: AmenityCategory[];
   error: string | null;
 }
 

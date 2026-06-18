@@ -1,9 +1,14 @@
 import { z } from 'zod';
-import type { AmenitiesData, Amenity } from '../types';
+import type { AmenitiesData, Amenity, AmenityCategory } from '../types';
 
 const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
 const FETCH_TIMEOUT_MS = 10000;
 const SEARCH_RADIUS_M = 500;
+const AMENITY_CATEGORIES: Array<Pick<AmenityCategory, 'label' | 'types'>> = [
+  { label: 'Fire stations', types: ['fire_station'] },
+  { label: 'Hospitals', types: ['hospital'] },
+  { label: 'Clinics and doctors', types: ['clinic', 'doctors'] },
+];
 
 interface OperationResult<T> {
   data: T | null;
@@ -12,6 +17,10 @@ interface OperationResult<T> {
 
 const emptyAmenitiesData = (error: string | null = null): AmenitiesData => ({
   amenities: [],
+  categories: AMENITY_CATEGORIES.map((category) => ({
+    ...category,
+    amenities: [],
+  })),
   error,
 });
 
@@ -20,6 +29,8 @@ const overpassNodeSchema = z.object({
   lat: z.number().optional(),
   lon: z.number().optional(),
   tags: z.object({
+    amenity: z.string().optional(),
+    emergency: z.string().optional(),
     name: z.string().optional(),
   }).optional(),
 });
@@ -31,6 +42,8 @@ const overpassWaySchema = z.object({
     lon: z.number().optional(),
   }).optional(),
   tags: z.object({
+    amenity: z.string().optional(),
+    emergency: z.string().optional(),
     name: z.string().optional(),
   }).optional(),
 });
@@ -40,6 +53,31 @@ const overpassResponseSchema = z.object({
 });
 
 type OverpassResponse = z.infer<typeof overpassResponseSchema>;
+
+const parseOverpassResponse = async (response: Response): Promise<OperationResult<OverpassResponse>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: 'Amenity data could not be read.' })
+  );
+
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
+
+  return Promise.resolve()
+    .then(() => JSON.parse(responseTextResult.data || ''))
+    .then<OperationResult<OverpassResponse>, OperationResult<OverpassResponse>>(
+      (jsonData) => {
+        const validationResult = overpassResponseSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: 'Amenity data could not be read.' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Amenity data could not be read.' })
+    );
+};
 
 const calculateDistance = (
   lat1: number,
@@ -107,23 +145,17 @@ export const fetchAmenitiesData = async (
     return emptyAmenitiesData('Amenity data unavailable');
   }
 
-  const dataResult = await response.json().then<OperationResult<OverpassResponse>, OperationResult<OverpassResponse>>(
-    (data) => {
-      const validationResult = overpassResponseSchema.safeParse(data);
-      if (!validationResult.success) {
-        return { data: null, error: 'Amenity data could not be read.' };
-      }
-
-      return { data: validationResult.data, error: null };
-    },
-    () => ({ data: null, error: 'Amenity data could not be read.' })
-  );
+  const dataResult = await parseOverpassResponse(response);
 
   if (!dataResult.data) {
     return emptyAmenitiesData(dataResult.error);
   }
 
   const elements = dataResult.data.elements || [];
+  if (elements.length === 0) {
+    return emptyAmenitiesData();
+  }
+
   const amenities: Amenity[] = [];
 
   for (const element of elements) {
@@ -149,9 +181,15 @@ export const fetchAmenitiesData = async (
   }
 
   amenities.sort((a, b) => a.distance - b.distance);
+  const visibleAmenities = amenities.slice(0, 10);
+  const categories = AMENITY_CATEGORIES.map((category) => ({
+    ...category,
+    amenities: visibleAmenities.filter((amenity) => category.types.includes(amenity.type)),
+  }));
 
   return {
-    amenities: amenities.slice(0, 10),
+    amenities: visibleAmenities,
+    categories,
     error: null,
   };
 };

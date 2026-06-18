@@ -26,7 +26,39 @@ const bgsFeatureCollectionSchema = z.object({
   features: z.array(bgsFeatureSchema).optional(),
 });
 
-type BGSFeatureCollection = z.infer<typeof bgsFeatureCollectionSchema>;
+const geologyProxyResponseSchema = z.object({
+  data: bgsFeatureCollectionSchema.nullable(),
+  error: z.string().nullable(),
+});
+
+type GeologyProxyResponse = z.infer<typeof geologyProxyResponseSchema>;
+
+const parseGeologyResponse = async (response: Response): Promise<OperationResult<GeologyProxyResponse>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: 'Geology data could not be read.' })
+  );
+
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
+
+  const validationResult = await Promise.resolve()
+    .then(() => JSON.parse(responseTextResult.data || ''))
+    .then<OperationResult<GeologyProxyResponse>, OperationResult<GeologyProxyResponse>>(
+      (jsonData) => {
+        const parsedResult = geologyProxyResponseSchema.safeParse(jsonData);
+        if (!parsedResult.success) {
+          return { data: null, error: 'Geology data could not be read.' };
+        }
+
+        return { data: parsedResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Geology data could not be read.' })
+    );
+
+  return validationResult;
+};
 
 const lexToSubsidenceRisk = (lexD: string | undefined): SubsidenceRisk => {
   if (!lexD) return 'Unknown';
@@ -76,23 +108,13 @@ export const fetchGeologyData = async (
     return emptyGeologyData('Geology data is unavailable right now.');
   }
 
-  const dataResult = await response.json().then<OperationResult<BGSFeatureCollection>, OperationResult<BGSFeatureCollection>>(
-    (data) => {
-      const validationResult = bgsFeatureCollectionSchema.safeParse(data);
-      if (!validationResult.success) {
-        return { data: null, error: 'Geology data could not be read.' };
-      }
+  const dataResult = await parseGeologyResponse(response);
 
-      return { data: validationResult.data, error: null };
-    },
-    () => ({ data: null, error: 'Geology data could not be read.' })
-  );
-
-  if (!dataResult.data) {
-    return emptyGeologyData(dataResult.error);
+  if (!dataResult.data?.data) {
+    return emptyGeologyData(dataResult.data?.error || dataResult.error);
   }
 
-  const features = dataResult.data.features || [];
+  const features = dataResult.data.data.features || [];
 
   if (features.length === 0) {
     return emptyGeologyData('No geology data in this area');

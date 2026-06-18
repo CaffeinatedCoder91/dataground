@@ -123,7 +123,19 @@ export const styles = stylex.create({
   amenitiesList: {
     display: 'flex',
     flexDirection: 'column',
+    gap: '0.75rem',
+  },
+  amenityCategory: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '0.5rem',
+  },
+  amenityCategoryLabel: {
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: '#4b5563',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
   },
   amenityItem: {
     padding: '0.5rem',
