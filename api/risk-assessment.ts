@@ -50,6 +50,9 @@ const BGS_WMS_URL = 'https://map.bgs.ac.uk/arcgis/services/BGS_Detailed_Geology/
 const BGS_SUPERFICIAL_LAYER = 'BGS.50k.Superficial.deposits';
 const FLOOD_FETCH_TIMEOUT_MS = 5000;
 const GEOLOGY_FETCH_TIMEOUT_MS = 8000;
+const CLAUDE_REQUEST_TIMEOUT_MS = 20000;
+const CLAUDE_MAX_RETRIES = 1;
+const BODY_STREAM_READ_TIMEOUT_MS = 5000;
 
 const riskAssessmentRequestSchema = z.object({
   postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
@@ -219,13 +222,24 @@ const readRequestBody = async (request: Request): Promise<OperationResult<string
     return { data: raw, error: null };
   }
 
-  // Node IncomingMessage fallback: read the raw stream.
+  // Node IncomingMessage fallback: read the raw stream, bounded so a request
+  // with no body (or a stalled stream that never emits 'end') can't hang the
+  // function until the platform timeout.
   try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-    }
-    return { data: Buffer.concat(chunks).toString('utf8'), error: null };
+    const readStream = (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+      return Buffer.concat(chunks).toString('utf8');
+    })();
+
+    const timeout = new Promise<string>((resolve) => {
+      setTimeout(() => resolve(''), BODY_STREAM_READ_TIMEOUT_MS);
+    });
+
+    const body = await Promise.race([readStream, timeout]);
+    return { data: body, error: null };
   } catch {
     return { data: null, error: 'Invalid request body' };
   }
@@ -572,7 +586,11 @@ export async function POST(request: Request) {
   }
 
   const prompt = buildRealDataRiskPrompt(buildRiskContext(payload));
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({
+    apiKey,
+    timeout: CLAUDE_REQUEST_TIMEOUT_MS,
+    maxRetries: CLAUDE_MAX_RETRIES,
+  });
 
   const messageResult = await client.messages.create({
     model: CLAUDE_MODEL,
