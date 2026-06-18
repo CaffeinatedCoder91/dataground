@@ -53,6 +53,23 @@ const GEOLOGY_FETCH_TIMEOUT_MS = 8000;
 const CLAUDE_REQUEST_TIMEOUT_MS = 20000;
 const CLAUDE_MAX_RETRIES = 1;
 const BODY_STREAM_READ_TIMEOUT_MS = 5000;
+const FLOOD_HARD_TIMEOUT_MS = 7000;
+const GEOLOGY_HARD_TIMEOUT_MS = 10000;
+
+// Guarantees an operation settles within timeoutMs even if the underlying
+// fetch/abort never resolves (observed on the deployed nodejs runtime).
+const withHardTimeout = <T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> => {
+  return Promise.race([
+    operation,
+    new Promise<T>((resolve) => {
+      setTimeout(() => resolve(fallback), timeoutMs);
+    }),
+  ]);
+};
 
 const riskAssessmentRequestSchema = z.object({
   postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
@@ -560,8 +577,16 @@ export async function POST(request: Request) {
   const body = bodyResult.data;
   console.error('[diag] before data fetch');
   const sourceResults = await Promise.allSettled([
-    fetchFloodRisk(body.latitude, body.longitude),
-    fetchGeologyRisk(body.latitude, body.longitude),
+    withHardTimeout(
+      fetchFloodRisk(body.latitude, body.longitude),
+      FLOOD_HARD_TIMEOUT_MS,
+      emptyFloodRiskData('Environment Agency flood data timed out.')
+    ),
+    withHardTimeout(
+      fetchGeologyRisk(body.latitude, body.longitude),
+      GEOLOGY_HARD_TIMEOUT_MS,
+      emptyGeologyData('British Geological Survey data timed out.')
+    ),
   ]);
   console.error('[diag] after data fetch', JSON.stringify(sourceResults.map((r) => r.status)));
 
