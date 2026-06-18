@@ -1,7 +1,10 @@
 import { Anthropic } from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { CLAUDE_MODEL, MAX_TOKENS } from './config.js';
-import { buildRiskAssessmentPrompt } from './prompts/riskAssessmentPrompt.js';
+import { buildRealDataRiskPrompt } from './prompts/realDataRiskPrompt.js';
+import { buildRiskContext } from '../src/services/reportBuilder.js';
 import {
   CLAUDE_TEMPERATURE_DETERMINISTIC,
   FIRST_FORWARDED_ADDRESS_INDEX,
@@ -9,16 +12,19 @@ import {
   HTTP_STATUS_BAD_REQUEST,
   HTTP_STATUS_INTERNAL_SERVER_ERROR,
   HTTP_STATUS_TOO_MANY_REQUESTS,
-  KEY_FACTORS_COUNT,
-  MAX_OVERALL_SCORE,
-  MIN_OVERALL_SCORE,
   MIN_REQUIRED_TEXT_LENGTH,
   RATE_LIMIT_INITIAL_REQUEST_COUNT,
   RATE_LIMIT_MAX_REQUESTS,
   RATE_LIMIT_UNKNOWN_ADDRESS_KEY,
   RATE_LIMIT_WINDOW_MS,
 } from '../src/constants/index.js';
-import { RISK_LEVEL, type RiskAssessment } from '../src/types/index.js';
+import type {
+  FloodRiskData,
+  GeologyData,
+  RiskAssessment,
+  RiskPayload,
+  SubsidenceRisk,
+} from '../src/types/index.js';
 
 export const maxDuration = 30;
 
@@ -26,11 +32,9 @@ export const config = {
   runtime: 'nodejs',
 };
 
-interface RiskAssessmentRequest {
-  postcode: string;
-  latitude: number;
-  longitude: number;
-  region: string;
+interface OperationResult<T> {
+  data: T | null;
+  error: string | null;
 }
 
 interface RequestEntry {
@@ -39,64 +43,87 @@ interface RequestEntry {
 }
 
 const requestCountMap = new Map<string, RequestEntry>();
+const execFileAsync = promisify(execFile);
 
-interface RequestWithJson {
-  json: () => Promise<unknown>;
-}
+const EA_FLOOD_FEATURES_URL = 'https://environment.data.gov.uk/spatialdata/flood-map-for-planning-flood-zones/ogc/features/v1/collections/Flood_Zones_2_3_Rivers_and_Sea/items';
+const BGS_WMS_URL = 'https://map.bgs.ac.uk/arcgis/services/BGS_Detailed_Geology/MapServer/WmsServer';
+const BGS_SUPERFICIAL_LAYER = 'BGS.50k.Superficial.deposits';
+const FLOOD_FETCH_TIMEOUT_MS = 5000;
+const GEOLOGY_FETCH_TIMEOUT_MS = 8000;
 
-interface HeadersWithGet {
-  get: (key: string) => string | null;
-}
+const riskAssessmentRequestSchema = z.object({
+  postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+  region: z.string().optional().default(''),
+});
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+const riskBreakdownSchema = z.object({
+  flood: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+  subsidence: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+});
 
-const hasJsonMethod = (value: unknown): value is RequestWithJson =>
-  isRecord(value) && typeof value.json === 'function';
+const claudeRiskResponseSchema = z.object({
+  overallRating: z.enum(['Low', 'Medium', 'High', 'Critical']),
+  summary: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+  riskBreakdown: riskBreakdownSchema,
+});
 
-const hasHeaderGetMethod = (value: unknown): value is HeadersWithGet =>
-  isRecord(value) && typeof value.get === 'function';
+const riskAssessmentResponseSchema = claudeRiskResponseSchema.extend({
+  postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
+});
 
-const getHeaderValue = (request: unknown, headerName: string): string | null => {
-  if (!isRecord(request)) {
-    return null;
-  }
+const floodFeatureSchema = z.object({
+  properties: z.object({
+    flood_zone: z.string().optional(),
+  }).optional(),
+}).passthrough();
 
-  const headers = request.headers;
+const floodFeatureCollectionSchema = z.object({
+  features: z.array(floodFeatureSchema),
+});
 
-  if (!isRecord(headers)) {
-    return null;
-  }
+const bgsFeatureSchema = z.object({
+  properties: z.object({
+    LEX_D: z.string().optional(),
+    RCS_D: z.string().optional(),
+  }).optional(),
+});
 
-  // Handle Web API Headers object (Vercel runtime)
-  if (hasHeaderGetMethod(headers)) {
-    return headers.get(headerName);
-  }
+const bgsFeatureCollectionSchema = z.object({
+  type: z.literal('FeatureCollection').optional(),
+  features: z.array(bgsFeatureSchema).optional(),
+});
 
-  // Handle Node.js IncomingMessage plain object
-  const headerValue = headers[headerName];
-  if (typeof headerValue === 'string') {
-    return headerValue;
-  }
+type RiskAssessmentRequest = z.infer<typeof riskAssessmentRequestSchema>;
+type FloodFeatureCollection = z.infer<typeof floodFeatureCollectionSchema>;
 
-  if (
-    Array.isArray(headerValue) &&
-    typeof headerValue[FIRST_FORWARDED_ADDRESS_INDEX] === 'string'
-  ) {
-    return headerValue[FIRST_FORWARDED_ADDRESS_INDEX];
-  }
+const emptyFloodRiskData = (error: string | null = null): FloodRiskData => ({
+  available: error === null,
+  source: 'Environment Agency',
+  zone: null,
+  severity: null,
+  warnings: [],
+  error,
+});
 
-  return null;
-};
+const emptyGeologyData = (error: string | null = null): GeologyData => ({
+  available: error === null,
+  source: 'British Geological Survey',
+  formation: null,
+  subsidenceRisk: 'Unknown',
+  disclaimer: 'Based on BGS 1:625k superficial geology - indicative only',
+  error,
+});
 
-const getClientAddress = (request: unknown): string => {
-  const forwardedFor = getHeaderValue(request, 'x-forwarded-for');
+const getClientAddress = (request: Request): string => {
+  const forwardedFor = request.headers.get('x-forwarded-for');
   if (forwardedFor) {
     const forwardedAddresses = forwardedFor.split(',');
     return forwardedAddresses[FIRST_FORWARDED_ADDRESS_INDEX].trim();
   }
 
-  const realAddress = getHeaderValue(request, 'x-real-ip');
+  const realAddress = request.headers.get('x-real-ip');
   if (realAddress) {
     return realAddress;
   }
@@ -145,65 +172,315 @@ if (
   cleanupTimer.unref();
 }
 
-const parseRequestBody = async (request: unknown): Promise<unknown> => {
-  if (hasJsonMethod(request)) {
-    return request.json();
-  }
+const parseJsonText = <T>(
+  text: string,
+  schema: z.ZodType<T>,
+  errorMessage: string
+): Promise<OperationResult<T>> => {
+  return Promise.resolve()
+    .then(() => JSON.parse(text))
+    .then<OperationResult<T>, OperationResult<T>>(
+      (jsonData) => {
+        const validationResult = schema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: errorMessage };
+        }
 
-  if (!isRecord(request)) {
-    throw new Error('INVALID_REQUEST');
-  }
-
-  const requestBody = request.body;
-  if (typeof requestBody === 'string') {
-    const parsedBody: unknown = JSON.parse(requestBody);
-    return parsedBody;
-  }
-
-  return requestBody;
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: errorMessage })
+    );
 };
 
-const parseRiskAssessmentRequest = (value: unknown): RiskAssessmentRequest => {
-  if (!isRecord(value)) {
-    throw new Error('INVALID_REQUEST');
+const parseRequest = async (request: Request): Promise<OperationResult<RiskAssessmentRequest>> => {
+  const requestTextResult = await request.text().then<OperationResult<string>, OperationResult<string>>(
+    (requestText) => ({ data: requestText, error: null }),
+    () => ({ data: null, error: 'Invalid request body' })
+  );
+
+  if (!requestTextResult.data) {
+    return { data: null, error: requestTextResult.error };
   }
 
-  if (
-    typeof value.postcode !== 'string' ||
-    typeof value.latitude !== 'number' ||
-    typeof value.longitude !== 'number'
-  ) {
-    throw new Error('INVALID_REQUEST');
+  return await parseJsonText(requestTextResult.data, riskAssessmentRequestSchema, 'Invalid request body');
+};
+
+const fetchWithTimeout = async (
+  url: string,
+  timeoutMs: number,
+  body?: string
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const requestBody = body ? new URLSearchParams({ data: body }).toString() : undefined;
+
+  try {
+    return await fetch(url, {
+      method: requestBody ? 'POST' : 'GET',
+      headers: requestBody
+        ? { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' }
+        : undefined,
+      body: requestBody,
+      signal: controller.signal,
+    });
+  } catch {
+    const curlArgs = [
+      '--fail',
+      '--silent',
+      '--show-error',
+      '--max-time',
+      String(Math.ceil(timeoutMs / 1000)),
+    ];
+
+    if (requestBody) {
+      curlArgs.push(
+        '--request',
+        'POST',
+        '--header',
+        'Content-Type: application/x-www-form-urlencoded; charset=UTF-8',
+        '--data',
+        requestBody
+      );
+    }
+
+    curlArgs.push(url);
+
+    const { stdout } = await execFileAsync('curl', curlArgs);
+    return new Response(stdout, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } finally {
+    clearTimeout(timeoutId);
   }
+};
+
+const parseResponse = async <T>(
+  response: Response,
+  schema: z.ZodType<T>,
+  errorMessage: string
+): Promise<OperationResult<T>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: errorMessage })
+  );
+
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
+
+  return await parseJsonText(responseTextResult.data, schema, errorMessage);
+};
+
+const buildFloodFeaturesUrl = (
+  latitude: number,
+  longitude: number
+): string => {
+  const bbox = `${longitude - 0.001},${latitude - 0.001},${longitude + 0.001},${latitude + 0.001}`;
+  const url = new URL(EA_FLOOD_FEATURES_URL);
+  url.search = new URLSearchParams({
+    f: 'application/json',
+    bbox,
+    limit: '20',
+  }).toString();
+  return url.toString();
+};
+
+const fetchFloodFeatures = async (
+  latitude: number,
+  longitude: number
+): Promise<OperationResult<FloodFeatureCollection>> => {
+  const responseResult = await fetchWithTimeout(
+    buildFloodFeaturesUrl(latitude, longitude),
+    FLOOD_FETCH_TIMEOUT_MS
+  ).then<OperationResult<Response>, OperationResult<Response>>(
+    (response) => ({ data: response, error: null }),
+    () => ({ data: null, error: 'Environment Agency flood data is unavailable right now.' })
+  );
+
+  if (!responseResult.data) {
+    return { data: null, error: responseResult.error };
+  }
+
+  if (!responseResult.data.ok) {
+    return { data: null, error: 'Environment Agency flood data is unavailable right now.' };
+  }
+
+  return parseResponse(responseResult.data, floodFeatureCollectionSchema, 'Environment Agency flood data could not be read.');
+};
+
+const getHighestFloodZone = (features: FloodFeatureCollection['features']): 2 | 3 | null => {
+  let highestZone: 2 | 3 | null = null;
+
+  for (const feature of features) {
+    const floodZone = feature.properties?.flood_zone?.toUpperCase();
+    if (floodZone === 'FZ3') {
+      return 3;
+    }
+
+    if (floodZone === 'FZ2') {
+      highestZone = 2;
+    }
+  }
+
+  return highestZone;
+};
+
+const fetchFloodRisk = async (
+  latitude: number,
+  longitude: number
+): Promise<FloodRiskData> => {
+  const floodFeaturesResult = await fetchFloodFeatures(latitude, longitude);
+  if (!floodFeaturesResult.data) {
+    return emptyFloodRiskData(floodFeaturesResult.error);
+  }
+
+  const highestFloodZone = getHighestFloodZone(floodFeaturesResult.data.features);
+  if (highestFloodZone) {
+    return {
+      available: true,
+      source: 'Environment Agency',
+      zone: `Zone ${highestFloodZone}`,
+      severity: highestFloodZone,
+      warnings: [],
+      error: null,
+    };
+  }
+
+  return emptyFloodRiskData();
+};
+
+const buildBgsUrl = (latitude: number, longitude: number): string => {
+  const bbox = `${longitude - 0.01},${latitude - 0.01},${longitude + 0.01},${latitude + 0.01}`;
+  const url = new URL(BGS_WMS_URL);
+  url.search = new URLSearchParams({
+    SERVICE: 'WMS',
+    VERSION: '1.3.0',
+    REQUEST: 'GetFeatureInfo',
+    LAYERS: BGS_SUPERFICIAL_LAYER,
+    QUERY_LAYERS: BGS_SUPERFICIAL_LAYER,
+    CRS: 'CRS:84',
+    BBOX: bbox,
+    WIDTH: '101',
+    HEIGHT: '101',
+    I: '50',
+    J: '50',
+    INFO_FORMAT: 'application/geo+json',
+  }).toString();
+  return url.toString();
+};
+
+const lexToSubsidenceRisk = (lexValue: string | undefined): SubsidenceRisk => {
+  if (!lexValue) return 'Unknown';
+  const upperLexValue = lexValue.toUpperCase();
+  if (upperLexValue.includes('CLAY')) return 'High';
+  if (upperLexValue.includes('ALLUVIUM')) return 'Medium';
+  if (upperLexValue.includes('CHALK')) return 'Low';
+  if (upperLexValue.includes('LIMESTONE')) return 'Low';
+  if (upperLexValue.includes('SANDSTONE')) return 'Low';
+  return 'Unknown';
+};
+
+const fetchGeologyRisk = async (
+  latitude: number,
+  longitude: number
+): Promise<GeologyData> => {
+  const responseResult = await fetchWithTimeout(
+    buildBgsUrl(latitude, longitude),
+    GEOLOGY_FETCH_TIMEOUT_MS
+  ).then<OperationResult<Response>, OperationResult<Response>>(
+    (response) => ({ data: response, error: null }),
+    () => ({ data: null, error: 'British Geological Survey data is unavailable right now.' })
+  );
+
+  if (!responseResult.data) {
+    return emptyGeologyData(responseResult.error);
+  }
+
+  if (responseResult.data.status === 400) {
+    return emptyGeologyData('British Geological Survey rejected the geology request.');
+  }
+
+  if (!responseResult.data.ok) {
+    return emptyGeologyData('British Geological Survey data is unavailable right now.');
+  }
+
+  const dataResult = await parseResponse(responseResult.data, bgsFeatureCollectionSchema, 'British Geological Survey data could not be read.');
+  if (!dataResult.data) {
+    return emptyGeologyData(dataResult.error);
+  }
+
+  const features = dataResult.data.features || [];
+  if (features.length === 0) {
+    return emptyGeologyData();
+  }
+
+  const primaryFeature = features[0];
+  const properties = primaryFeature.properties || {};
+  const lexDescription = properties.LEX_D;
+  const rockDescription = properties.RCS_D;
 
   return {
-    postcode: value.postcode,
-    latitude: value.latitude,
-    longitude: value.longitude,
-    region: typeof value.region === 'string' ? value.region : '',
+    available: true,
+    source: 'British Geological Survey',
+    formation: rockDescription || lexDescription || null,
+    subsidenceRisk: lexToSubsidenceRisk(lexDescription),
+    disclaimer: 'Based on BGS 1:625k superficial geology - indicative only',
+    error: null,
   };
 };
 
-const riskLevelSchema = z.enum([
-  RISK_LEVEL.LOW,
-  RISK_LEVEL.MEDIUM,
-  RISK_LEVEL.HIGH,
-]);
+const getSettledData = <T>(
+  result: PromiseSettledResult<T>,
+  fallback: T
+): T => result.status === 'fulfilled' ? result.value : fallback;
 
-const riskScoreSchema = z.object({
-  level: riskLevelSchema,
-  score: z.number().min(MIN_OVERALL_SCORE).max(MAX_OVERALL_SCORE),
-});
+const buildIncompleteAssessment = (
+  postcode: string,
+  floodData: FloodRiskData,
+  geologyData: GeologyData
+): RiskAssessment => {
+  const unavailableSources = [
+    floodData.available ? null : 'Environment Agency flood data',
+    geologyData.available ? null : 'British Geological Survey geology data',
+  ].filter((sourceName): sourceName is string => sourceName !== null);
 
-const riskAssessmentResponseSchema = z.object({
-  postcode: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
-  floodRisk: riskScoreSchema,
-  fireRisk: riskScoreSchema,
-  subsidenceRisk: riskScoreSchema,
-  overallScore: z.number().min(MIN_OVERALL_SCORE).max(MAX_OVERALL_SCORE),
-  summary: z.string().min(MIN_REQUIRED_TEXT_LENGTH),
-  keyFactors: z.array(z.string()).length(KEY_FACTORS_COUNT),
-});
+  return {
+    postcode,
+    overallRating: 'Incomplete',
+    summary: `Risk rating is incomplete because ${unavailableSources.join(', ')} ${unavailableSources.length === 1 ? 'is' : 'are'} unavailable. Available source results are shown below, but no Low/Medium/High/Critical rating has been assigned.`,
+    riskBreakdown: {
+      flood: floodData.available
+        ? floodData.zone
+          ? `Environment Agency data places this location in ${floodData.zone}.`
+          : 'Environment Agency data is available and does not identify this location as Flood Zone 2 or 3.'
+        : floodData.error || 'Environment Agency flood data is unavailable.',
+      subsidence: geologyData.available
+        ? `British Geological Survey data identifies ${geologyData.formation || 'an unknown superficial deposit'} with ${geologyData.subsidenceRisk.toLowerCase()} subsidence risk.`
+        : geologyData.error || 'British Geological Survey geology data is unavailable.',
+    },
+  };
+};
+
+const parseClaudeResponse = async (responseText: string, postcode: string): Promise<OperationResult<RiskAssessment>> => {
+  const claudeResult = await parseJsonText(responseText, claudeRiskResponseSchema, 'Failed to generate risk assessment');
+  if (!claudeResult.data) {
+    return { data: null, error: claudeResult.error };
+  }
+
+  const validationResult = riskAssessmentResponseSchema.safeParse({
+    postcode,
+    ...claudeResult.data,
+  });
+
+  if (!validationResult.success) {
+    console.error('Risk assessment validation error:', validationResult.error);
+    return { data: null, error: 'Failed to generate risk assessment' };
+  }
+
+  return { data: validationResult.data, error: null };
+};
 
 export async function POST(request: Request) {
   const clientAddress = getClientAddress(request);
@@ -214,12 +491,10 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: RiskAssessmentRequest;
-  try {
-    body = parseRiskAssessmentRequest(await parseRequestBody(request));
-  } catch {
+  const bodyResult = await parseRequest(request);
+  if (!bodyResult.data) {
     return Response.json(
-      { data: null, error: 'Invalid request body' },
+      { data: null, error: bodyResult.error },
       { status: HTTP_STATUS_BAD_REQUEST }
     );
   }
@@ -232,58 +507,88 @@ export async function POST(request: Request) {
     );
   }
 
+  const body = bodyResult.data;
+  const sourceResults = await Promise.allSettled([
+    fetchFloodRisk(body.latitude, body.longitude),
+    fetchGeologyRisk(body.latitude, body.longitude),
+  ]);
+
+  const floodData = getSettledData(sourceResults[0], emptyFloodRiskData('Environment Agency flood data is unavailable right now.'));
+  const geologyData = getSettledData(sourceResults[1], emptyGeologyData('British Geological Survey data is unavailable right now.'));
+
+  const payload: RiskPayload = {
+    postcode: body.postcode,
+    latitude: body.latitude,
+    longitude: body.longitude,
+    flood: floodData,
+    geology: geologyData,
+  };
+
+  if (!floodData.available || !geologyData.available) {
+    return Response.json({
+      data: {
+        assessment: buildIncompleteAssessment(body.postcode, floodData, geologyData),
+        floodData,
+        geologyData,
+      },
+      error: null,
+    });
+  }
+
+  const prompt = buildRealDataRiskPrompt(buildRiskContext(payload));
   const client = new Anthropic({ apiKey });
 
-  const prompt = buildRiskAssessmentPrompt(
-    body.postcode,
-    body.region,
-    body.latitude,
-    body.longitude
+  const messageResult = await client.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: MAX_TOKENS,
+    temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
+    messages: [
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+  }).then<OperationResult<Awaited<ReturnType<typeof client.messages.create>>>, OperationResult<Awaited<ReturnType<typeof client.messages.create>>>>(
+    (message) => ({ data: message, error: null }),
+    () => ({ data: null, error: 'Failed to generate risk assessment' })
   );
 
-  try {
-    const message = await client.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: MAX_TOKENS,
-      temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    });
+  if (!messageResult.data) {
+    return Response.json(
+      { data: null, error: messageResult.error },
+      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    );
+  }
 
-    const responseText =
-      message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].type === 'text'
-        ? message.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX].text
-        : '';
-
-    const parsedResponse: unknown = JSON.parse(responseText);
-    const responseWithPostcode = {
-      postcode: body.postcode,
-      ...(isRecord(parsedResponse) ? parsedResponse : {}),
-    };
-    const validationResult = riskAssessmentResponseSchema.safeParse(responseWithPostcode);
-
-    if (!validationResult.success) {
-      console.error('Risk assessment validation error:', validationResult.error);
-      return Response.json(
-        { data: null, error: 'Failed to generate risk assessment' },
-        { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
-      );
-    }
-
-    const assessment: RiskAssessment = validationResult.data;
-
-    return Response.json({ data: assessment, error: null });
-  } catch (error) {
-    console.error('Risk assessment error:', error instanceof Error ? error.message : 'Unknown error');
+  if (!('content' in messageResult.data)) {
     return Response.json(
       { data: null, error: 'Failed to generate risk assessment' },
       { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
     );
   }
+
+  const firstContentBlock = messageResult.data.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX];
+  const responseText =
+    firstContentBlock.type === 'text'
+      ? firstContentBlock.text
+      : '';
+
+  const assessmentResult = await parseClaudeResponse(responseText, body.postcode);
+  if (!assessmentResult.data) {
+    return Response.json(
+      { data: null, error: assessmentResult.error },
+      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    );
+  }
+
+  return Response.json({
+    data: {
+      assessment: assessmentResult.data,
+      floodData,
+      geologyData,
+    },
+    error: null,
+  });
 }
 
 export default POST;

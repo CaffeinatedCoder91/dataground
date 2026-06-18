@@ -6,21 +6,12 @@ import type { RiskAssessment } from '../../types';
 describe('RiskReport', () => {
   const mockAssessment: RiskAssessment = {
     postcode: 'SW1A1AA',
-    floodRisk: {
-      level: 'low',
-      score: 2,
+    overallRating: 'Medium',
+    summary: 'This area has moderate flood and subsidence risk based on real UK government data.',
+    riskBreakdown: {
+      flood: 'Located in flood zone 2 with severity level 2. Environment Agency data shows no active warnings.',
+      subsidence: 'Geological formation shows medium subsidence risk from clay-rich alluvium deposits.',
     },
-    fireRisk: {
-      level: 'medium',
-      score: 5,
-    },
-    subsidenceRisk: {
-      level: 'high',
-      score: 8,
-    },
-    overallScore: 5,
-    summary: 'This area has moderate risk.',
-    keyFactors: ['Factor one', 'Factor two', 'Factor three'],
   };
 
   it('renders the postcode heading', () => {
@@ -45,7 +36,7 @@ describe('RiskReport', () => {
     expect(screen.getByText('Greater London')).toBeInTheDocument();
   });
 
-  it('renders the overall score', () => {
+  it('renders the overall rating badge', () => {
     render(
       <RiskReport
         assessment={mockAssessment}
@@ -53,7 +44,7 @@ describe('RiskReport', () => {
         region="Greater London"
       />
     );
-    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(screen.getByText('Medium')).toBeInTheDocument();
   });
 
   it('renders the summary paragraph', () => {
@@ -64,10 +55,10 @@ describe('RiskReport', () => {
         region="Greater London"
       />
     );
-    expect(screen.getByText('This area has moderate risk.')).toBeInTheDocument();
+    expect(screen.getByText(/This area has moderate flood and subsidence risk/)).toBeInTheDocument();
   });
 
-  it('renders all three key factors', () => {
+  it('renders risk breakdown categories', () => {
     render(
       <RiskReport
         assessment={mockAssessment}
@@ -75,12 +66,23 @@ describe('RiskReport', () => {
         region="Greater London"
       />
     );
-    expect(screen.getByText('Factor one')).toBeInTheDocument();
-    expect(screen.getByText('Factor two')).toBeInTheDocument();
-    expect(screen.getByText('Factor three')).toBeInTheDocument();
+    expect(screen.getByText('Flood Risk')).toBeInTheDocument();
+    expect(screen.getByText('Subsidence Risk')).toBeInTheDocument();
   });
 
-  it('renders the disclaimer text', () => {
+  it('renders source attribution', () => {
+    render(
+      <RiskReport
+        assessment={mockAssessment}
+        postcode="SW1A1AA"
+        region="Greater London"
+      />
+    );
+    expect(screen.getByText('Source: Environment Agency')).toBeInTheDocument();
+    expect(screen.getByText('Source: British Geological Survey (BGS)')).toBeInTheDocument();
+  });
+
+  it('renders the updated disclaimer with attribution', () => {
     render(
       <RiskReport
         assessment={mockAssessment}
@@ -89,23 +91,7 @@ describe('RiskReport', () => {
       />
     );
     expect(
-      screen.getByText(/This assessment is AI-generated for demonstration purposes only/)
+      screen.getByText(/Risk assessment synthesised by Claude from Environment Agency and BGS data/)
     ).toBeInTheDocument();
-  });
-
-  it('renders three RiskCard components', () => {
-    render(
-      <RiskReport
-        assessment={mockAssessment}
-        postcode="SW1A1AA"
-        region="Greater London"
-      />
-    );
-    expect(screen.getByText('Flood risk')).toBeInTheDocument();
-    expect(screen.getByText('Fire risk')).toBeInTheDocument();
-    expect(screen.getByText('Subsidence risk')).toBeInTheDocument();
-    expect(screen.getByText('Low')).toBeInTheDocument();
-    expect(screen.getByText('Medium')).toBeInTheDocument();
-    expect(screen.getByText('High')).toBeInTheDocument();
   });
 });

@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import type { FloodRiskData, FloodWarning } from '../types';
+import type { FloodRiskData } from '../types';
 
-const EA_FLOOD_AREAS_URL = 'https://environment.data.gov.uk/flood-monitoring/id/floodAreas';
-const EA_FLOOD_WARNINGS_URL = 'https://environment.data.gov.uk/flood-monitoring/api/floodAreas';
+const EA_FLOOD_FEATURES_URL = 'https://environment.data.gov.uk/spatialdata/flood-map-for-planning-flood-zones/ogc/features/v1/collections/Flood_Zones_2_3_Rivers_and_Sea/items';
 const FETCH_TIMEOUT_MS = 5000;
 
 const fetchWithTimeout = async (url: string): Promise<Response> => {
@@ -24,163 +23,125 @@ interface OperationResult<T> {
 }
 
 const emptyFloodRiskData = (error: string | null = null): FloodRiskData => ({
+  available: error === null,
+  source: 'Environment Agency',
   zone: null,
   severity: null,
   warnings: [],
   error,
 });
 
-const positionSchema = z.array(z.number()).min(2);
-const linearRingSchema = z.array(positionSchema);
-const polygonCoordinatesSchema = z.array(linearRingSchema);
-const multiPolygonCoordinatesSchema = z.array(polygonCoordinatesSchema);
+const floodFeatureSchema = z.object({
+  properties: z.object({
+    flood_zone: z.string().optional(),
+  }).optional(),
+}).passthrough();
 
-const floodGeometrySchema = z.union([
-  z.object({
-    type: z.literal('Polygon'),
-    coordinates: polygonCoordinatesSchema,
-  }),
-  z.object({
-    type: z.literal('MultiPolygon'),
-    coordinates: multiPolygonCoordinatesSchema,
-  }),
-]);
-
-const floodPolygonSchema = z.object({
-  type: z.literal('Feature'),
-  geometry: floodGeometrySchema.nullable(),
+const floodFeatureCollectionSchema = z.object({
+  features: z.array(floodFeatureSchema),
 });
 
-const floodAreaResponseSchema = z.object({
-  items: z.array(z.object({
-    notation: z.string().optional(),
-    label: z.string().optional(),
-    eaAreaCode: z.string().optional(),
-    polygon: floodPolygonSchema.nullish(),
-  })).optional(),
-});
+type FloodFeatureCollection = z.infer<typeof floodFeatureCollectionSchema>;
 
-const floodWarningResponseSchema = z.object({
-  items: z.array(z.object({
-    description: z.string().optional(),
-    severityLevel: z.number().optional(),
-    areaName: z.string().optional(),
-  })).optional(),
-});
+const parseFloodFeatureCollection = async (response: Response): Promise<OperationResult<FloodFeatureCollection>> => {
+  const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+    (responseText) => ({ data: responseText, error: null }),
+    () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
+  );
 
-type FloodAreaResponse = z.infer<typeof floodAreaResponseSchema>;
-type FloodWarningResponse = z.infer<typeof floodWarningResponseSchema>;
+  if (!responseTextResult.data) {
+    return { data: null, error: responseTextResult.error };
+  }
 
-export const fetchFloodRisk = async (
+  return Promise.resolve()
+    .then(() => JSON.parse(responseTextResult.data || ''))
+    .then<OperationResult<FloodFeatureCollection>, OperationResult<FloodFeatureCollection>>(
+      (jsonData) => {
+        const validationResult = floodFeatureCollectionSchema.safeParse(jsonData);
+        if (!validationResult.success) {
+          return { data: null, error: 'Environment Agency flood data could not be read.' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
+    );
+};
+
+const buildFloodFeaturesUrl = (
   latitude: number,
   longitude: number
-): Promise<FloodRiskData> => {
-  const responseResult = await fetchWithTimeout(
-    `${EA_FLOOD_AREAS_URL}?lat=${latitude}&long=${longitude}&_limit=5`
-  ).then<OperationResult<Response>, OperationResult<Response>>(
+): string => {
+  const bbox = `${longitude - 0.001},${latitude - 0.001},${longitude + 0.001},${latitude + 0.001}`;
+  const url = new URL(EA_FLOOD_FEATURES_URL);
+  url.search = new URLSearchParams({
+    f: 'application/json',
+    bbox,
+    limit: '20',
+  }).toString();
+  return url.toString();
+};
+
+const fetchFloodFeatures = async (
+  latitude: number,
+  longitude: number
+): Promise<OperationResult<FloodFeatureCollection>> => {
+  const responseResult = await fetchWithTimeout(buildFloodFeaturesUrl(latitude, longitude)).then<
+    OperationResult<Response>,
+    OperationResult<Response>
+  >(
     (response) => ({ data: response, error: null }),
     () => ({ data: null, error: 'Environment Agency flood data is unavailable right now.' })
   );
 
   if (!responseResult.data) {
-    return emptyFloodRiskData(responseResult.error);
+    return { data: null, error: responseResult.error };
   }
 
-  const response: Response = responseResult.data;
-
-  if (!response.ok) {
-    return emptyFloodRiskData('Environment Agency flood data is unavailable right now.');
+  if (!responseResult.data.ok) {
+    return { data: null, error: 'Environment Agency flood data is unavailable right now.' };
   }
 
-  const areaDataResult = await response.json().then<OperationResult<FloodAreaResponse>, OperationResult<FloodAreaResponse>>(
-    (data) => {
-      const validationResult = floodAreaResponseSchema.safeParse(data);
-      if (!validationResult.success) {
-        return { data: null, error: 'Environment Agency flood data could not be read.' };
-      }
+  return parseFloodFeatureCollection(responseResult.data);
+};
 
-      return { data: validationResult.data, error: null };
-    },
-    () => ({ data: null, error: 'Environment Agency flood data could not be read.' })
-  );
+const getHighestFloodZone = (features: FloodFeatureCollection['features']): 2 | 3 | null => {
+  let highestZone: 2 | 3 | null = null;
 
-  if (!areaDataResult.data) {
-    return emptyFloodRiskData(areaDataResult.error);
-  }
+  for (const feature of features) {
+    const floodZone = feature.properties?.flood_zone?.toUpperCase();
+    if (floodZone === 'FZ3') {
+      return 3;
+    }
 
-  const items = areaDataResult.data.items || [];
-
-  if (items.length === 0) {
-    return emptyFloodRiskData();
-  }
-
-  const primaryArea = items[0];
-  const notation = primaryArea.notation || '';
-  const zone = primaryArea.label || null;
-
-  let warnings: FloodWarning[] = [];
-  let severity: number | null = null;
-  let floodError: string | null = null;
-
-  if (notation) {
-    const warningResponseResult = await fetchWithTimeout(
-      `${EA_FLOOD_WARNINGS_URL}/${notation}`
-    ).then<OperationResult<Response>, OperationResult<Response>>(
-      (warningResponse) => ({ data: warningResponse, error: null }),
-      () => ({ data: null, error: 'Environment Agency flood warnings are unavailable right now.' })
-    );
-
-    if (!warningResponseResult.data) {
-      floodError = warningResponseResult.error;
-    } else if (!warningResponseResult.data.ok) {
-      floodError = 'Environment Agency flood warnings are unavailable right now.';
-    } else {
-      const warningDataResult = await warningResponseResult.data.json().then<OperationResult<FloodWarningResponse>, OperationResult<FloodWarningResponse>>(
-        (warningData) => {
-          const validationResult = floodWarningResponseSchema.safeParse(warningData);
-          if (!validationResult.success) {
-            return { data: null, error: 'Environment Agency flood warnings could not be read.' };
-          }
-
-          return { data: validationResult.data, error: null };
-        },
-        () => ({ data: null, error: 'Environment Agency flood warnings could not be read.' })
-      );
-
-      if (!warningDataResult.data) {
-        floodError = warningDataResult.error;
-      } else {
-        const warningItems = warningDataResult.data.items || [];
-
-        warnings = warningItems
-          .filter((item) => item.description)
-          .map((item) => ({
-            description: item.description || '',
-            severity: item.severityLevel || 0,
-            areaName: item.areaName || zone || 'Flood Area',
-          }));
-
-        if (warningItems.length > 0 && warningItems[0].severityLevel) {
-          severity = warningItems[0].severityLevel;
-        }
-      }
+    if (floodZone === 'FZ2') {
+      highestZone = 2;
     }
   }
 
-  const result: FloodRiskData = {
-    zone,
-    severity: severity || (zone ? 1 : null),
-    warnings,
-    error: floodError,
-  };
+  return highestZone;
+};
 
-  if (primaryArea.polygon?.geometry) {
-    result.polygon = {
-      type: 'Feature',
-      geometry: primaryArea.polygon.geometry,
-      properties: {},
+export const fetchFloodRisk = async (
+  latitude: number,
+  longitude: number
+): Promise<FloodRiskData> => {
+  const floodFeaturesResult = await fetchFloodFeatures(latitude, longitude);
+  if (!floodFeaturesResult.data) {
+    return emptyFloodRiskData(floodFeaturesResult.error);
+  }
+
+  const highestFloodZone = getHighestFloodZone(floodFeaturesResult.data.features);
+  if (highestFloodZone) {
+    return {
+      available: true,
+      source: 'Environment Agency',
+      zone: `Zone ${highestFloodZone}`,
+      severity: highestFloodZone,
+      warnings: [],
+      error: null,
     };
   }
 
-  return result;
+  return emptyFloodRiskData();
 };

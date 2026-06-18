@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { z } from 'zod';
-import { RISK_LEVEL, type PostcodeLocation, type RiskAssessmentResult } from '../types';
+import type { PostcodeLocation, RiskAssessmentResult } from '../types';
 
 interface UseRiskAssessmentReturn {
   assess: (location: PostcodeLocation) => Promise<RiskAssessmentResult>;
@@ -13,15 +13,9 @@ interface OperationResult<T> {
   error: string | null;
 }
 
-const riskLevelSchema = z.enum([
-  RISK_LEVEL.LOW,
-  RISK_LEVEL.MEDIUM,
-  RISK_LEVEL.HIGH,
-]);
-
-const riskScoreSchema = z.object({
-  level: riskLevelSchema,
-  score: z.number(),
+const riskBreakdownSchema = z.object({
+  flood: z.string(),
+  subsidence: z.string(),
 });
 
 const positionSchema = z.array(z.number()).min(2);
@@ -47,6 +41,8 @@ const floodPolygonSchema = z.object({
 });
 
 const floodRiskDataSchema = z.object({
+  available: z.boolean(),
+  source: z.literal('Environment Agency'),
   zone: z.string().nullable(),
   severity: z.number().nullable(),
   warnings: z.array(z.object({
@@ -61,14 +57,19 @@ const floodRiskDataSchema = z.object({
 const riskAssessmentResultSchema = z.object({
   assessment: z.object({
     postcode: z.string(),
-    floodRisk: riskScoreSchema,
-    fireRisk: riskScoreSchema,
-    subsidenceRisk: riskScoreSchema,
-    overallScore: z.number(),
-    keyFactors: z.array(z.string()),
+    overallRating: z.enum(['Incomplete', 'Low', 'Medium', 'High', 'Critical']),
     summary: z.string(),
+    riskBreakdown: riskBreakdownSchema,
   }),
   floodData: floodRiskDataSchema,
+  geologyData: z.object({
+    available: z.boolean(),
+    source: z.literal('British Geological Survey'),
+    formation: z.string().nullable(),
+    subsidenceRisk: z.enum(['High', 'Medium', 'Low', 'Unknown']),
+    disclaimer: z.string(),
+    error: z.string().nullable(),
+  }).optional(),
 });
 
 const riskAssessmentApiResponseSchema = z.object({
@@ -104,7 +105,7 @@ export const useRiskAssessment = (): UseRiskAssessmentReturn => {
       throw new Error(errorMessage);
     }
 
-    const responseResult = await fetch('/api/risk', {
+    const responseResult = await fetch('/api/risk-assessment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -126,17 +127,30 @@ export const useRiskAssessment = (): UseRiskAssessmentReturn => {
 
     const response: Response = responseResult.data;
 
-    const dataResult = await response.json().then<OperationResult<RiskAssessmentApiResponse>, OperationResult<RiskAssessmentApiResponse>>(
-      (data) => {
-        const validationResult = riskAssessmentApiResponseSchema.safeParse(data);
-        if (!validationResult.success) {
-          return { data: null, error: 'Unable to generate a risk assessment. Please try again.' };
-        }
-
-        return { data: validationResult.data, error: null };
-      },
+    const responseTextResult = await response.text().then<OperationResult<string>, OperationResult<string>>(
+      (responseText) => ({ data: responseText, error: null }),
       () => ({ data: null, error: 'Unable to generate a risk assessment. Please try again.' })
     );
+
+    if (!responseTextResult.data) {
+      setError(responseTextResult.error);
+      setIsLoading(false);
+      throw new Error(responseTextResult.error || 'Unable to generate a risk assessment. Please try again.');
+    }
+
+    const dataResult = await Promise.resolve()
+      .then(() => JSON.parse(responseTextResult.data || ''))
+      .then<OperationResult<RiskAssessmentApiResponse>, OperationResult<RiskAssessmentApiResponse>>(
+        (jsonData) => {
+          const validationResult = riskAssessmentApiResponseSchema.safeParse(jsonData);
+          if (!validationResult.success) {
+            return { data: null, error: 'Unable to generate a risk assessment. Please try again.' };
+          }
+
+          return { data: validationResult.data, error: null };
+        },
+        () => ({ data: null, error: 'Unable to generate a risk assessment. Please try again.' })
+      );
 
     if (!dataResult.data) {
       setError(dataResult.error);

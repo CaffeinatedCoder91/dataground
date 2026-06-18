@@ -1,12 +1,11 @@
 import * as stylex from '@stylexjs/stylex';
 import { memo } from 'react';
-import type { FloodRiskData, GeologyData, AmenitiesData } from '../../types';
+import type { FloodRiskData, GeologyData } from '../../types';
 import { styles } from './RiskPanel.stylex';
 
 interface RiskPanelProps {
   floodData: FloodRiskData;
   geologyData?: GeologyData;
-  amenitiesData?: AmenitiesData;
 }
 
 const SeverityBadge = ({ severity }: { severity: number }) => {
@@ -44,13 +43,11 @@ const SubsidenceBadge = ({ risk }: { risk: string }) => {
   );
 };
 
-const RiskPanelComponent = ({ floodData, geologyData, amenitiesData }: RiskPanelProps) => {
-  const hasFloodData = floodData.zone || floodData.warnings.length > 0 || floodData.error;
+const RiskPanelComponent = ({ floodData, geologyData }: RiskPanelProps) => {
+  const hasFloodData = floodData.available || floodData.zone || floodData.warnings.length > 0 || floodData.error;
   const hasGeologyData = geologyData !== undefined;
-  const hasAmenitiesData = amenitiesData !== undefined;
-  const amenityCategories = amenitiesData?.categories || [];
 
-  if (!hasFloodData && !hasGeologyData && !hasAmenitiesData) {
+  if (!hasFloodData && !hasGeologyData) {
     return null;
   }
 
@@ -66,15 +63,15 @@ const RiskPanelComponent = ({ floodData, geologyData, amenitiesData }: RiskPanel
             </div>
           ) : (
             <>
-              {floodData.zone && (
-                <div {...stylex.props(styles.section)}>
-                  <div {...stylex.props(styles.zoneLabel)}>Flood Zone</div>
-                  <div {...stylex.props(styles.zoneValue)}>{floodData.zone}</div>
-                  {floodData.severity !== null && (
-                    <SeverityBadge severity={floodData.severity} />
-                  )}
+              <div {...stylex.props(styles.section)}>
+                <div {...stylex.props(styles.zoneLabel)}>Flood Zone</div>
+                <div {...stylex.props(styles.zoneValue)}>
+                  {floodData.zone || 'Not in designated Flood Zone 2 or 3'}
                 </div>
-              )}
+                {floodData.severity !== null && (
+                  <SeverityBadge severity={floodData.severity} />
+                )}
+              </div>
 
               {floodData.warnings.length > 0 && (
                 <div {...stylex.props(styles.section)}>
@@ -124,53 +121,6 @@ const RiskPanelComponent = ({ floodData, geologyData, amenitiesData }: RiskPanel
         </div>
       )}
 
-      {hasAmenitiesData && (
-        <div {...stylex.props(styles.section)}>
-          <div {...stylex.props(styles.label)}>Nearby Amenities (500m)</div>
-          {amenitiesData!.error ? (
-            <div {...stylex.props(styles.emptyMessage)}>
-              {amenitiesData!.error}
-            </div>
-          ) : amenityCategories.length > 0 ? (
-            <div {...stylex.props(styles.amenitiesList)}>
-              {amenityCategories.map((category) => (
-                <div key={category.label} {...stylex.props(styles.amenityCategory)}>
-                  <div {...stylex.props(styles.amenityCategoryLabel)}>{category.label}</div>
-                  {category.amenities.length > 0 ? (
-                    category.amenities.map((amenity) => (
-                      <div key={`${amenity.type}-${amenity.name}-${amenity.distance}`} {...stylex.props(styles.amenityItem)}>
-                        <div {...stylex.props(styles.amenityName)}>{amenity.name}</div>
-                        <div {...stylex.props(styles.amenityDistance)}>
-                          {amenity.type} • {amenity.distance}m away
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div {...stylex.props(styles.emptyMessage)}>
-                      No results within 500m
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : amenitiesData!.amenities.length > 0 ? (
-            <div {...stylex.props(styles.amenitiesList)}>
-              {amenitiesData!.amenities.map((amenity) => (
-                <div key={`${amenity.type}-${amenity.name}-${amenity.distance}`} {...stylex.props(styles.amenityItem)}>
-                  <div {...stylex.props(styles.amenityName)}>{amenity.name}</div>
-                  <div {...stylex.props(styles.amenityDistance)}>
-                    {amenity.type} • {amenity.distance}m away
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div {...stylex.props(styles.emptyMessage)}>
-              No amenities found in this area
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };

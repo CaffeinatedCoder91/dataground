@@ -6,7 +6,9 @@ interface LoadingStateProps {
 }
 
 export const LoadingState = ({ status }: LoadingStateProps) => {
-  const message = status === 'geocoding' ? 'Finding location...' : 'Analysing risk...';
+  const message = status === 'geocoding'
+    ? 'Finding location...'
+    : 'Gathering Environment Agency and BGS data...';
 
   return (
     <div {...stylex.props(styles.container)} aria-live="polite">

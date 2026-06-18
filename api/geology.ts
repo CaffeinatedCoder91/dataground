@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 export const maxDuration = 30;
 
@@ -8,6 +10,9 @@ export const config = {
 
 const HTTP_STATUS_BAD_REQUEST = 400;
 const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
+const BGS_WMS_URL = 'https://map.bgs.ac.uk/arcgis/services/BGS_Detailed_Geology/MapServer/WmsServer';
+const BGS_SUPERFICIAL_LAYER = 'BGS.50k.Superficial.deposits';
+const execFileAsync = promisify(execFile);
 
 interface OperationResult<T> {
   data: T | null;
@@ -35,16 +40,56 @@ async function GET(request: Request) {
 
     const { lat, lng } = validationResult.data;
     const bbox = `${lng - 0.01},${lat - 0.01},${lng + 0.01},${lat + 0.01}`;
-    const wfsUrl = `https://map.bgs.ac.uk/arcgis/services/BGS_Detailed_Geology/MapServer/WFSServer?service=WFS&version=2.0.0&request=GetFeature&typeName=BGS_Detailed_Geology:GBR_BGS_625k_SLS&bbox=${bbox}&outputFormat=application/json`;
-    console.log('Fetching BGS WFS:', wfsUrl);
+    const wmsUrl = new URL(BGS_WMS_URL);
+    wmsUrl.search = new URLSearchParams({
+      SERVICE: 'WMS',
+      VERSION: '1.3.0',
+      REQUEST: 'GetFeatureInfo',
+      LAYERS: BGS_SUPERFICIAL_LAYER,
+      QUERY_LAYERS: BGS_SUPERFICIAL_LAYER,
+      CRS: 'CRS:84',
+      BBOX: bbox,
+      WIDTH: '101',
+      HEIGHT: '101',
+      I: '50',
+      J: '50',
+      INFO_FORMAT: 'application/geo+json',
+    }).toString();
+    console.log('Fetching BGS WMS:', wmsUrl.toString());
 
     const FETCH_TIMEOUT_MS = 8000;
+    const fetchBgsWithCurlFallback = async (url: string): Promise<Response> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      try {
+        return await fetch(url, { signal: controller.signal });
+      } catch {
+        const { stdout } = await execFileAsync('curl', [
+          '--fail',
+          '--silent',
+          '--show-error',
+          '--max-time',
+          String(Math.ceil(FETCH_TIMEOUT_MS / 1000)),
+          url,
+        ]);
+        return new Response(stdout, {
+          status: 200,
+          headers: { 'Content-Type': 'application/geo+json' },
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
     const fetchWithTimeout = async (url: string): Promise<Response> => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
       try {
-        const response: Response = await fetch(url, { signal: controller.signal });
+        const response: Response = url.startsWith(BGS_WMS_URL)
+          ? await fetchBgsWithCurlFallback(url)
+          : await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
         return response;
       } finally {
@@ -52,9 +97,9 @@ async function GET(request: Request) {
       }
     };
 
-    const responseResult = await fetchWithTimeout(wfsUrl).then<OperationResult<Response>, OperationResult<Response>>(
+    const responseResult = await fetchWithTimeout(wmsUrl.toString()).then<OperationResult<Response>, OperationResult<Response>>(
       (response) => ({ data: response, error: null }),
-      () => ({ data: null, error: 'BGS WFS service unavailable' })
+      () => ({ data: null, error: 'BGS geology service unavailable' })
     );
 
     if (!responseResult.data) {
@@ -69,7 +114,7 @@ async function GET(request: Request) {
     if (!response.ok) {
       console.error('Geology response not ok:', response.status);
       return Response.json(
-        { data: null, error: 'BGS WFS service unavailable' },
+        { data: null, error: 'BGS geology service unavailable' },
         { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
       );
     }

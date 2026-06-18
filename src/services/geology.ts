@@ -9,6 +9,8 @@ interface OperationResult<T> {
 }
 
 const emptyGeologyData = (error: string | null = null): GeologyData => ({
+  available: error === null,
+  source: 'British Geological Survey',
   formation: null,
   subsidenceRisk: 'Unknown',
   disclaimer: 'Based on BGS 1:625k superficial geology — indicative only',
@@ -105,6 +107,10 @@ export const fetchGeologyData = async (
   const response: Response = responseResult.data;
 
   if (!response.ok) {
+    if (response.status === 400) {
+      return emptyGeologyData('Geology request was rejected by the British Geological Survey.');
+    }
+
     return emptyGeologyData('Geology data is unavailable right now.');
   }
 
@@ -126,6 +132,8 @@ export const fetchGeologyData = async (
   const rcsD = properties.RCS_D;
 
   return {
+    available: true,
+    source: 'British Geological Survey',
     formation: rcsD || lexD || null,
     subsidenceRisk: lexToSubsidenceRisk(lexD),
     disclaimer: 'Based on BGS 1:625k superficial geology — indicative only',

@@ -16,8 +16,7 @@ import { useRiskAssessment } from './hooks/useRiskAssessment';
 import { useResultsCache } from './hooks/useResultsCache';
 import { useRecentSearches } from './hooks/useRecentSearches';
 import { fetchGeologyData } from './services/geology';
-import { fetchAmenitiesData } from './services/amenities';
-import type { Coordinates, PostcodeLocation, RiskAssessment, FloodRiskData, GeologyData, AmenitiesData, RiskAssessmentResult } from './types';
+import type { Coordinates, PostcodeLocation, RiskAssessment, FloodRiskData, GeologyData, RiskAssessmentResult } from './types';
 import { styles } from './App.stylex';
 
 type AppStatus = 'idle' | 'geocoding' | 'analysing' | 'complete' | 'error';
@@ -38,6 +37,15 @@ const isValidCoordinate = (latitude: number, longitude: number): boolean => {
   );
 };
 
+const emptyGeologyData = (error: string): GeologyData => ({
+  available: false,
+  source: 'British Geological Survey',
+  formation: null,
+  subsidenceRisk: 'Unknown',
+  disclaimer: 'Based on BGS 1:625k superficial geology — indicative only',
+  error,
+});
+
 const App = () => {
   const [status, setStatus] = useState<AppStatus>('idle');
   const [currentLocation, setCurrentLocation] = useState<PostcodeLocation | null>(null);
@@ -45,7 +53,6 @@ const App = () => {
   const [riskAssessment, setRiskAssessment] = useState<RiskAssessment | null>(null);
   const [floodData, setFloodData] = useState<FloodRiskData | null>(null);
   const [geologyData, setGeologyData] = useState<GeologyData | null>(null);
-  const [amenitiesData, setAmenitiesData] = useState<AmenitiesData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { geocode } = useGeocoding();
@@ -69,7 +76,6 @@ const App = () => {
     setRiskAssessment(null);
     setFloodData(null);
     setGeologyData(null);
-    setAmenitiesData(null);
 
     const cachedResult = getCachedResult(postcode);
     if (cachedResult) {
@@ -81,7 +87,6 @@ const App = () => {
       setRiskAssessment(cachedResult.assessment);
       setFloodData(cachedResult.floodData || null);
       setGeologyData(cachedResult.geologyData || null);
-      setAmenitiesData(cachedResult.amenitiesData || null);
       setStatus('complete');
       addRecentSearch(postcode);
       updateUrlParameter(postcode);
@@ -119,14 +124,19 @@ const App = () => {
 
     setStatus('analysing');
 
-    const [assessmentResult, geology, amenities] = await Promise.all([
+    const [assessmentSettled, geologySettled] = await Promise.allSettled([
       assess(location).then<OperationResult<RiskAssessmentResult>, OperationResult<RiskAssessmentResult>>(
         (result) => ({ data: result, error: null }),
         (error: Error) => ({ data: null, error: error.message })
       ),
       fetchGeologyData(location.latitude, location.longitude),
-      fetchAmenitiesData(location.latitude, location.longitude),
     ]);
+    const assessmentResult = assessmentSettled.status === 'fulfilled'
+      ? assessmentSettled.value
+      : { data: null, error: 'An unexpected error occurred' };
+    const geology = geologySettled.status === 'fulfilled'
+      ? geologySettled.value
+      : emptyGeologyData('Geology data is unavailable right now.');
 
     if (!assessmentResult.data) {
       setErrorMessage(assessmentResult.error || 'An unexpected error occurred');
@@ -135,16 +145,16 @@ const App = () => {
     }
 
     const result = assessmentResult.data;
+    const resolvedGeology = geology.available ? geology : result.geologyData || geology;
+
     setRiskAssessment(result.assessment);
     setFloodData(result.floodData);
-    setGeologyData(geology);
-    setAmenitiesData(amenities);
+    setGeologyData(resolvedGeology);
     setCachedResult(postcode, {
       location,
       assessment: result.assessment,
       floodData: result.floodData,
-      geologyData: geology,
-      amenitiesData: amenities,
+      geologyData: resolvedGeology,
     });
     setStatus('complete');
     addRecentSearch(postcode);
@@ -209,7 +219,10 @@ const App = () => {
             )}
 
             {status === 'analysing' && (
-              <RiskReportSkeleton />
+              <>
+                <LoadingState status={status} />
+                <RiskReportSkeleton />
+              </>
             )}
 
             {riskAssessment && currentLocation && status === 'complete' && (
@@ -219,11 +232,10 @@ const App = () => {
                   postcode={currentLocation.postcode}
                   region={currentLocation.region}
                 />
-                {(floodData || geologyData || amenitiesData) && (
+                {(floodData || geologyData) && (
                   <RiskPanel
-                    floodData={floodData || { zone: null, severity: null, warnings: [], error: null }}
+                    floodData={floodData || { available: false, source: 'Environment Agency', zone: null, severity: null, warnings: [], error: null }}
                     geologyData={geologyData || undefined}
-                    amenitiesData={amenitiesData || undefined}
                   />
                 )}
                 <ShareButton postcode={currentLocation.postcode} />

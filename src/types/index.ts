@@ -31,14 +31,18 @@ export interface RiskScore {
   score: number;
 }
 
+export interface RiskBreakdown {
+  flood: string;
+  subsidence: string;
+}
+
+export type OverallRating = 'Incomplete' | 'Low' | 'Medium' | 'High' | 'Critical';
+
 export interface RiskAssessment {
   postcode: string;
-  floodRisk: RiskScore;
-  fireRisk: RiskScore;
-  subsidenceRisk: RiskScore;
-  overallScore: number;
-  keyFactors: string[];
+  overallRating: OverallRating;
   summary: string;
+  riskBreakdown: RiskBreakdown;
 }
 
 export interface GeocodeError {
@@ -58,6 +62,8 @@ export interface FloodWarning {
 }
 
 export interface FloodRiskData {
+  available: boolean;
+  source: 'Environment Agency';
   zone: string | null;
   severity: number | null;
   warnings: FloodWarning[];
@@ -68,33 +74,24 @@ export interface FloodRiskData {
 export type SubsidenceRisk = 'High' | 'Medium' | 'Low' | 'Unknown';
 
 export interface GeologyData {
+  available: boolean;
+  source: 'British Geological Survey';
   formation: string | null;
   subsidenceRisk: SubsidenceRisk;
   disclaimer: string;
   error: string | null;
 }
 
-export interface Amenity {
-  name: string;
-  distance: number;
-  type: string;
-}
-
-export interface AmenityCategory {
-  label: string;
-  types: string[];
-  amenities: Amenity[];
-}
-
-export interface AmenitiesData {
-  amenities: Amenity[];
-  categories: AmenityCategory[];
-  error: string | null;
+export interface RiskPayload {
+  postcode: string;
+  latitude: number;
+  longitude: number;
+  flood: FloodRiskData;
+  geology: GeologyData;
 }
 
 export interface RiskAssessmentResult {
   assessment: RiskAssessment;
   floodData: FloodRiskData;
   geologyData?: GeologyData;
-  amenitiesData?: AmenitiesData;
 }

@@ -13,19 +13,16 @@ vi.mock('@anthropic-ai/sdk', () => ({
   }),
 }));
 
-interface RiskScoreResponse {
-  level: 'low' | 'medium' | 'high';
-  score: number;
-}
-
 interface RiskAssessmentResponseData {
-  postcode: string;
-  floodRisk: RiskScoreResponse;
-  fireRisk: RiskScoreResponse;
-  subsidenceRisk: RiskScoreResponse;
-  overallScore: number;
-  summary: string;
-  keyFactors: string[];
+  assessment: {
+    postcode: string;
+    overallRating: 'Incomplete' | 'Low' | 'Medium' | 'High' | 'Critical';
+    summary: string;
+    riskBreakdown: {
+      flood: string;
+      subsidence: string;
+    };
+  };
 }
 
 interface RiskAssessmentApiResponse {
@@ -39,6 +36,31 @@ const parseRiskAssessmentApiResponse = async (
   return response.json() as Promise<RiskAssessmentApiResponse>;
 };
 
+const mockSuccessfulSourceFetches = () => {
+  vi.stubGlobal('fetch', vi.fn((url: string | URL | Request) => {
+    const urlText = String(url);
+    if (urlText.includes('flood-map-for-planning-flood-zones')) {
+      return Promise.resolve(Response.json({ features: [] }));
+    }
+
+    if (urlText.includes('BGS_Detailed_Geology')) {
+      return Promise.resolve(Response.json({
+      type: 'FeatureCollection',
+      features: [
+        {
+          properties: {
+            LEX_D: 'London Clay Formation',
+            RCS_D: 'Clay',
+          },
+        },
+      ],
+      }));
+    }
+
+    return Promise.resolve(Response.json({}));
+  }));
+};
+
 describe('riskAssessmentHandler', () => {
   beforeEach(() => {
     process.env.ANTHROPIC_API_KEY = 'test-key';
@@ -47,6 +69,7 @@ describe('riskAssessmentHandler', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('returns 400 when postcode is missing from the request body', async () => {
@@ -109,18 +132,19 @@ describe('riskAssessmentHandler', () => {
         {
           type: 'text',
           text: JSON.stringify({
-            floodRisk: { level: 'low', score: 2 },
-            fireRisk: { level: 'low', score: 2 },
-            subsidenceRisk: { level: 'high', score: 8 },
-            overallScore: 4,
+            overallRating: 'Medium',
             summary: 'Low to medium risk area.',
-            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+            riskBreakdown: {
+              flood: 'No designated flood zone was identified.',
+              subsidence: 'BGS geology data was available.',
+            },
           }),
         },
       ],
     };
 
     anthropicMessagesCreate.mockResolvedValue(claudeMessageResponse);
+    mockSuccessfulSourceFetches();
 
     const request = new Request('http://localhost/api/risk-assessment', {
       method: 'POST',
@@ -137,19 +161,20 @@ describe('riskAssessmentHandler', () => {
 
     expect(response.status).toBe(200);
     expect(data.error).toBeNull();
-    expect(data.data).toEqual({
+    expect(data.data?.assessment).toEqual({
       postcode: 'SW1A1AA',
-      floodRisk: { level: 'low', score: 2 },
-      fireRisk: { level: 'low', score: 2 },
-      subsidenceRisk: { level: 'high', score: 8 },
-      overallScore: 4,
+      overallRating: 'Medium',
       summary: 'Low to medium risk area.',
-      keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+      riskBreakdown: {
+        flood: 'No designated flood zone was identified.',
+        subsidence: 'BGS geology data was available.',
+      },
     });
   });
 
   it('returns the correct JSON shape with null data and error string on Claude failure', async () => {
     anthropicMessagesCreate.mockRejectedValue(new Error('Claude API error'));
+    mockSuccessfulSourceFetches();
 
     const request = new Request('http://localhost/api/risk-assessment', {
       method: 'POST',
@@ -175,18 +200,19 @@ describe('riskAssessmentHandler', () => {
         {
           type: 'text',
           text: JSON.stringify({
-            floodRisk: { level: 'low', score: 2 },
-            fireRisk: { level: 'low', score: 2 },
-            subsidenceRisk: { level: 'high', score: 8 },
-            overallScore: 4,
+            overallRating: 'Medium',
             summary: 'Low to medium risk area.',
-            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+            riskBreakdown: {
+              flood: 'No designated flood zone was identified.',
+              subsidence: 'BGS geology data was available.',
+            },
           }),
         },
       ],
     };
 
     anthropicMessagesCreate.mockResolvedValue(claudeMessageResponse);
+    mockSuccessfulSourceFetches();
 
     const request = new Request('http://localhost/api/risk-assessment', {
       method: 'POST',

@@ -8,8 +8,8 @@ describe('LoadingState', () => {
     expect(screen.getByText('Finding location...')).toBeInTheDocument();
   });
 
-  it('shows "Analysing risk..." when status is analysing', () => {
+  it('shows the data gathering message when status is analysing', () => {
     render(<LoadingState status="analysing" />);
-    expect(screen.getByText('Analysing risk...')).toBeInTheDocument();
+    expect(screen.getByText('Gathering Environment Agency and BGS data...')).toBeInTheDocument();
   });
 });

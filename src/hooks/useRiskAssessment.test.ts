@@ -12,6 +12,34 @@ describe('useRiskAssessment', () => {
     district: 'Westminster',
     region: 'Greater London',
   };
+  const mockApiResponse = {
+    data: {
+      assessment: {
+        postcode: 'SW1A1AA',
+        overallRating: 'Medium',
+        summary: 'Low to medium risk area.',
+        riskBreakdown: {
+          flood: 'No designated flood zone was identified.',
+          subsidence: 'BGS geology data was unavailable.',
+        },
+      },
+      floodData: {
+        available: true,
+        source: 'Environment Agency',
+        zone: null,
+        severity: null,
+        warnings: [],
+        error: null,
+      },
+    },
+    error: null,
+  };
+
+  const createMockResponse = (body: object, ok: boolean, status: number) => ({
+    ok,
+    status,
+    text: async () => JSON.stringify(body),
+  });
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -22,30 +50,7 @@ describe('useRiskAssessment', () => {
   });
 
   it('returns a RiskAssessmentResult on a successful response', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          assessment: {
-            postcode: 'SW1A1AA',
-            floodRisk: { level: 'low', score: 2 },
-            fireRisk: { level: 'low', score: 2 },
-            subsidenceRisk: { level: 'high', score: 8 },
-            overallScore: 4,
-            summary: 'Low to medium risk area.',
-            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
-          },
-          floodData: {
-            zone: null,
-            severity: null,
-            warnings: [],
-            error: null,
-          },
-        },
-        error: null,
-      }),
-    };
+    const mockResponse = createMockResponse(mockApiResponse, true, 200);
 
     vi.mocked(fetch).mockResolvedValueOnce(mockResponse as Response);
 
@@ -59,14 +64,16 @@ describe('useRiskAssessment', () => {
     expect(assessment).toEqual({
       assessment: {
         postcode: 'SW1A1AA',
-        floodRisk: { level: 'low', score: 2 },
-        fireRisk: { level: 'low', score: 2 },
-        subsidenceRisk: { level: 'high', score: 8 },
-        overallScore: 4,
+        overallRating: 'Medium',
         summary: 'Low to medium risk area.',
-        keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+        riskBreakdown: {
+          flood: 'No designated flood zone was identified.',
+          subsidence: 'BGS geology data was unavailable.',
+        },
       },
       floodData: {
+        available: true,
+        source: 'Environment Agency',
         zone: null,
         severity: null,
         warnings: [],
@@ -76,14 +83,10 @@ describe('useRiskAssessment', () => {
   });
 
   it('returns the assessment failure error message on a non-200 response', async () => {
-    const mockResponse = {
-      ok: false,
-      status: 500,
-      json: async () => ({
-        data: null,
-        error: 'Failed to generate assessment',
-      }),
-    };
+    const mockResponse = createMockResponse({
+      data: null,
+      error: 'Failed to generate assessment',
+    }, false, 500);
 
     vi.mocked(fetch).mockResolvedValueOnce(mockResponse as Response);
 
@@ -117,30 +120,7 @@ describe('useRiskAssessment', () => {
   });
 
   it('sets isLoading to true during the request', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          assessment: {
-            postcode: 'SW1A1AA',
-            floodRisk: { level: 'low', score: 2 },
-            fireRisk: { level: 'low', score: 2 },
-            subsidenceRisk: { level: 'high', score: 8 },
-            overallScore: 4,
-            summary: 'Low to medium risk area.',
-            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
-          },
-          floodData: {
-            zone: null,
-            severity: null,
-            warnings: [],
-            error: null,
-          },
-        },
-        error: null,
-      }),
-    };
+    const mockResponse = createMockResponse(mockApiResponse, true, 200);
     let resolveFetchResponse: (response: Response) => void = () => undefined;
     const fetchPromise = new Promise<Response>((resolve) => {
       resolveFetchResponse = resolve;
@@ -164,30 +144,7 @@ describe('useRiskAssessment', () => {
   });
 
   it('sets isLoading to false after the request completes', async () => {
-    const mockResponse = {
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          assessment: {
-            postcode: 'SW1A1AA',
-            floodRisk: { level: 'low', score: 2 },
-            fireRisk: { level: 'low', score: 2 },
-            subsidenceRisk: { level: 'high', score: 8 },
-            overallScore: 4,
-            summary: 'Low to medium risk area.',
-            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
-          },
-          floodData: {
-            zone: null,
-            severity: null,
-            warnings: [],
-            error: null,
-          },
-        },
-        error: null,
-      }),
-    };
+    const mockResponse = createMockResponse(mockApiResponse, true, 200);
 
     vi.mocked(fetch).mockResolvedValueOnce(mockResponse as Response);
 

@@ -1,0 +1,17 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Property Risk Checker" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Enter a UK postcode to generate an AI-powered risk assessment
+  - generic [ref=e7]:
+    - generic [ref=e9]:
+      - paragraph [ref=e10]: Powered by AI and geospatial data. Enter any UK postcode to instantly generate a property risk assessment covering flood, fire, and subsidence risk.
+      - generic [ref=e11]: Enter a UK postcode
+      - generic [ref=e12]:
+        - textbox "Enter a UK postcode" [active] [ref=e13]:
+          - /placeholder: e.g. SW1A 1AA
+        - button "Check risk" [ref=e14] [cursor=pointer]
+    - generic [ref=e18]:
+      - region [ref=e19]
+      - button [ref=e21] [cursor=pointer]
+      - link [ref=e24] [cursor=pointer]:
+        - /url: https://www.mapbox.com/
