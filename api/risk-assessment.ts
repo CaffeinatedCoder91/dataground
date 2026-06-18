@@ -200,11 +200,39 @@ const parseJsonText = <T>(
     );
 };
 
+const readRequestBody = async (request: Request): Promise<OperationResult<string>> => {
+  const req = request as any;
+
+  // Fetch-style Request (Edge runtime): consume the body stream as text.
+  if (typeof req.text === 'function') {
+    try {
+      const requestText = await req.text();
+      return { data: requestText, error: null };
+    } catch {
+      return { data: null, error: 'Invalid request body' };
+    }
+  }
+
+  // Vercel Node runtime: body may already be parsed onto req.body.
+  if (req.body !== undefined && req.body !== null) {
+    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    return { data: raw, error: null };
+  }
+
+  // Node IncomingMessage fallback: read the raw stream.
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    }
+    return { data: Buffer.concat(chunks).toString('utf8'), error: null };
+  } catch {
+    return { data: null, error: 'Invalid request body' };
+  }
+};
+
 const parseRequest = async (request: Request): Promise<OperationResult<RiskAssessmentRequest>> => {
-  const requestTextResult = await request.text().then<OperationResult<string>, OperationResult<string>>(
-    (requestText) => ({ data: requestText, error: null }),
-    () => ({ data: null, error: 'Invalid request body' })
-  );
+  const requestTextResult = await readRequestBody(request);
 
   if (!requestTextResult.data) {
     return { data: null, error: requestTextResult.error };
