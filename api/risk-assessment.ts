@@ -558,10 +558,12 @@ export async function POST(request: Request) {
   }
 
   const body = bodyResult.data;
+  console.error('[diag] before data fetch');
   const sourceResults = await Promise.allSettled([
     fetchFloodRisk(body.latitude, body.longitude),
     fetchGeologyRisk(body.latitude, body.longitude),
   ]);
+  console.error('[diag] after data fetch', JSON.stringify(sourceResults.map((r) => r.status)));
 
   const floodData = getSettledData(sourceResults[0], emptyFloodRiskData('Environment Agency flood data is unavailable right now.'));
   const geologyData = getSettledData(sourceResults[1], emptyGeologyData('British Geological Survey data is unavailable right now.'));
@@ -585,6 +587,7 @@ export async function POST(request: Request) {
     });
   }
 
+  console.error('[diag] before anthropic call');
   const prompt = buildRealDataRiskPrompt(buildRiskContext(payload));
   const client = new Anthropic({
     apiKey,
