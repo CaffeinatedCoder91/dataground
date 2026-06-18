@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { MAX_RECENT_SEARCHES, RECENT_SEARCHES_STORAGE_KEY } from '../constants';
 
 interface UseRecentSearchesReturn {
@@ -8,11 +8,9 @@ interface UseRecentSearchesReturn {
 }
 
 export const useRecentSearches = (): UseRecentSearchesReturn => {
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-
   const normalisePostcode = (postcode: string) => postcode.trim().replace(/\s/g, '').toUpperCase();
 
-  useEffect(() => {
+  const readInitialSearches = (): string[] => {
     const storedSearches = sessionStorage.getItem(RECENT_SEARCHES_STORAGE_KEY);
     if (storedSearches) {
       try {
@@ -21,7 +19,7 @@ export const useRecentSearches = (): UseRecentSearchesReturn => {
           Array.isArray(parsedSearches) &&
           parsedSearches.every((search) => typeof search === 'string')
         ) {
-          setRecentSearches(parsedSearches);
+          return parsedSearches;
         }
       } catch (caughtError) {
         if (import.meta.env.DEV) {
@@ -29,7 +27,11 @@ export const useRecentSearches = (): UseRecentSearchesReturn => {
         }
       }
     }
-  }, []);
+
+    return [];
+  };
+
+  const [recentSearches, setRecentSearches] = useState<string[]>(readInitialSearches);
 
   const addRecentSearch = (postcode: string) => {
     setRecentSearches((previousSearches) => {

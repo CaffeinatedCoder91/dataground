@@ -1,9 +1,10 @@
 import { useRef } from 'react';
-import type { PostcodeLocation, RiskAssessment } from '../types';
+import type { PostcodeLocation, RiskAssessment, FloodRiskData } from '../types';
 
 interface CachedResult {
   location: PostcodeLocation;
   assessment: RiskAssessment;
+  floodData?: FloodRiskData;
 }
 
 interface UseResultsCacheReturn {

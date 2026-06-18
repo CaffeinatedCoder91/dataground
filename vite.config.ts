@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { POST as riskAssessmentHandler } from './api/risk-assessment'
+import { POST as riskHandler } from './api/risk'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 
@@ -81,6 +82,42 @@ const createLocalApiPlugin = (): Plugin => ({
           })
 
           const webResponse = await riskAssessmentHandler(webRequest)
+          await sendWebResponse(webResponse, serverResponse)
+        } catch (caughtError) {
+          console.error(
+            'Local API error:',
+            caughtError instanceof Error ? caughtError.message : 'Unknown error',
+          )
+
+          serverResponse.statusCode = 500
+          serverResponse.setHeader('Content-Type', 'application/json')
+          serverResponse.end(
+            JSON.stringify({
+              data: null,
+              error: 'Failed to generate risk assessment',
+            }),
+          )
+        }
+      },
+    )
+
+    server.middlewares.use(
+      '/api/risk',
+      async (request: RequestWithOriginalUrl, serverResponse) => {
+        try {
+          const requestBody = await readRequestBody(request)
+          const originalUrl = request.originalUrl ?? '/api/risk'
+          const url = new URL(originalUrl, 'http://localhost')
+          const webRequest = new Request(url, {
+            method: request.method,
+            headers: getRequestHeaders(request),
+            body:
+              request.method === 'GET' || request.method === 'HEAD'
+                ? undefined
+                : requestBody,
+          })
+
+          const webResponse = await riskHandler(webRequest)
           await sendWebResponse(webResponse, serverResponse)
         } catch (caughtError) {
           console.error(

@@ -1,87 +1,110 @@
 import { useState } from 'react';
-import type { PostcodeLocation, RiskAssessment, RiskLevel } from '../types';
-import { RISK_LEVEL } from '../types';
+import { z } from 'zod';
+import { RISK_LEVEL, type PostcodeLocation, type RiskAssessmentResult } from '../types';
 
 interface UseRiskAssessmentReturn {
-  assess: (location: PostcodeLocation) => Promise<RiskAssessment>;
+  assess: (location: PostcodeLocation) => Promise<RiskAssessmentResult>;
   isLoading: boolean;
   error: string | null;
 }
 
-interface RiskAssessmentApiResponse {
-  data: RiskAssessment | null;
+interface OperationResult<T> {
+  data: T | null;
   error: string | null;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+const riskLevelSchema = z.enum([
+  RISK_LEVEL.LOW,
+  RISK_LEVEL.MEDIUM,
+  RISK_LEVEL.HIGH,
+]);
 
-const isRiskLevel = (value: unknown): value is RiskLevel =>
-  value === RISK_LEVEL.LOW || value === RISK_LEVEL.MEDIUM || value === RISK_LEVEL.HIGH;
+const riskScoreSchema = z.object({
+  level: riskLevelSchema,
+  score: z.number(),
+});
 
-const isRiskScore = (value: unknown): value is RiskAssessment['floodRisk'] => {
-  if (!isRecord(value)) {
-    return false;
-  }
+const positionSchema = z.array(z.number()).min(2);
+const linearRingSchema = z.array(positionSchema);
+const polygonCoordinatesSchema = z.array(linearRingSchema);
+const multiPolygonCoordinatesSchema = z.array(polygonCoordinatesSchema);
 
-  return isRiskLevel(value.level) && typeof value.score === 'number';
-};
+const floodGeometrySchema = z.union([
+  z.object({
+    type: z.literal('Polygon'),
+    coordinates: polygonCoordinatesSchema,
+  }),
+  z.object({
+    type: z.literal('MultiPolygon'),
+    coordinates: multiPolygonCoordinatesSchema,
+  }),
+]);
 
-const parseRiskAssessment = (value: unknown): RiskAssessment => {
-  if (!isRecord(value)) {
-    throw new Error('INVALID_RESPONSE');
-  }
+const floodPolygonSchema = z.object({
+  type: z.literal('Feature'),
+  geometry: floodGeometrySchema,
+  properties: z.record(z.string(), z.never()),
+});
 
-  const keyFactors = value.keyFactors;
+const floodRiskDataSchema = z.object({
+  zone: z.string().nullable(),
+  severity: z.number().nullable(),
+  warnings: z.array(z.object({
+    description: z.string(),
+    severity: z.number(),
+    areaName: z.string(),
+  })),
+  error: z.string().nullable(),
+  polygon: floodPolygonSchema.optional(),
+});
 
-  if (
-    !isRiskScore(value.floodRisk) ||
-    !isRiskScore(value.fireRisk) ||
-    !isRiskScore(value.subsidenceRisk) ||
-    typeof value.overallScore !== 'number' ||
-    typeof value.summary !== 'string' ||
-    !Array.isArray(keyFactors) ||
-    !keyFactors.every((factor) => typeof factor === 'string')
-  ) {
-    throw new Error('INVALID_RESPONSE');
-  }
+const riskAssessmentResultSchema = z.object({
+  assessment: z.object({
+    postcode: z.string(),
+    floodRisk: riskScoreSchema,
+    fireRisk: riskScoreSchema,
+    subsidenceRisk: riskScoreSchema,
+    overallScore: z.number(),
+    keyFactors: z.array(z.string()),
+    summary: z.string(),
+  }),
+  floodData: floodRiskDataSchema,
+});
 
-  return {
-    postcode: typeof value.postcode === 'string' ? value.postcode : '',
-    floodRisk: value.floodRisk,
-    fireRisk: value.fireRisk,
-    subsidenceRisk: value.subsidenceRisk,
-    overallScore: value.overallScore,
-    keyFactors,
-    summary: value.summary,
-  };
-};
+const riskAssessmentApiResponseSchema = z.object({
+  data: riskAssessmentResultSchema.nullable(),
+  error: z.string().nullable(),
+});
 
-const parseRiskAssessmentApiResponse = (value: unknown): RiskAssessmentApiResponse => {
-  if (!isRecord(value)) {
-    throw new Error('INVALID_RESPONSE');
-  }
+type RiskAssessmentApiResponse = z.infer<typeof riskAssessmentApiResponseSchema>;
 
-  if (value.error !== null && typeof value.error !== 'string') {
-    throw new Error('INVALID_RESPONSE');
-  }
-
-  return {
-    data: value.data === null ? null : parseRiskAssessment(value.data),
-    error: value.error,
-  };
+const isValidCoordinate = (latitude: number, longitude: number): boolean => {
+  return (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    latitude >= -90 &&
+    latitude <= 90 &&
+    longitude >= -180 &&
+    longitude <= 180
+  );
 };
 
 export const useRiskAssessment = (): UseRiskAssessmentReturn => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const assess = async (location: PostcodeLocation): Promise<RiskAssessment> => {
+  const assess = async (location: PostcodeLocation): Promise<RiskAssessmentResult> => {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const response = await fetch('/api/risk-assessment', {
+    if (!isValidCoordinate(location.latitude, location.longitude)) {
+      const errorMessage = 'Unable to use this postcode. Please try another postcode.';
+      setError(errorMessage);
+      setIsLoading(false);
+      throw new Error(errorMessage);
+    }
+
+    const responseResult = await fetch('/api/risk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,31 +113,48 @@ export const useRiskAssessment = (): UseRiskAssessmentReturn => {
           longitude: location.longitude,
           region: location.region,
         }),
-      });
+      }).then<OperationResult<Response>, OperationResult<Response>>(
+        (response) => ({ data: response, error: null }),
+        () => ({ data: null, error: 'Unable to connect. Please check your connection and try again.' })
+      );
 
-      const data = parseRiskAssessmentApiResponse(await response.json());
-
-      if (!response.ok || data.error) {
-        throw new Error('ASSESSMENT_FAILED');
-      }
-
-      if (!data.data) {
-        throw new Error('ASSESSMENT_FAILED');
-      }
-
-      return data.data;
-    } catch (caughtError) {
-      const errorMessage =
-        caughtError instanceof Error &&
-        caughtError.message === 'ASSESSMENT_FAILED'
-          ? 'Unable to generate a risk assessment. Please try again.'
-          : 'Unable to connect. Please check your connection and try again.';
-
-      setError(errorMessage);
-      throw new Error(errorMessage, { cause: caughtError });
-    } finally {
+    if (!responseResult.data) {
+      setError(responseResult.error);
       setIsLoading(false);
+      throw new Error(responseResult.error || 'Unable to connect. Please check your connection and try again.');
     }
+
+    const response: Response = responseResult.data;
+
+    const dataResult = await response.json().then<OperationResult<RiskAssessmentApiResponse>, OperationResult<RiskAssessmentApiResponse>>(
+      (data) => {
+        const validationResult = riskAssessmentApiResponseSchema.safeParse(data);
+        if (!validationResult.success) {
+          return { data: null, error: 'Unable to generate a risk assessment. Please try again.' };
+        }
+
+        return { data: validationResult.data, error: null };
+      },
+      () => ({ data: null, error: 'Unable to generate a risk assessment. Please try again.' })
+    );
+
+    if (!dataResult.data) {
+      setError(dataResult.error);
+      setIsLoading(false);
+      throw new Error(dataResult.error || 'Unable to generate a risk assessment. Please try again.');
+    }
+
+    const data = dataResult.data;
+
+    if (!response.ok || data.error || !data.data) {
+      const errorMessage = 'Unable to generate a risk assessment. Please try again.';
+      setError(errorMessage);
+      setIsLoading(false);
+      throw new Error(errorMessage);
+    }
+
+    setIsLoading(false);
+    return data.data;
   };
 
   return { assess, isLoading, error };

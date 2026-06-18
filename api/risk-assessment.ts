@@ -285,3 +285,5 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export default POST;

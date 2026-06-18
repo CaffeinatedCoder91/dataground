@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useRiskAssessment } from './useRiskAssessment';
-import type { PostcodeLocation, RiskAssessment } from '../types';
+import type { PostcodeLocation, RiskAssessmentResult } from '../types';
 
 describe('useRiskAssessment', () => {
   const mockLocation: PostcodeLocation = {
@@ -21,19 +21,27 @@ describe('useRiskAssessment', () => {
     vi.restoreAllMocks();
   });
 
-  it('returns a RiskAssessment on a successful response', async () => {
+  it('returns a RiskAssessmentResult on a successful response', async () => {
     const mockResponse = {
       ok: true,
       status: 200,
       json: async () => ({
         data: {
-          postcode: 'SW1A1AA',
-          floodRisk: { level: 'low', score: 2 },
-          fireRisk: { level: 'low', score: 2 },
-          subsidenceRisk: { level: 'high', score: 8 },
-          overallScore: 4,
-          summary: 'Low to medium risk area.',
-          keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          assessment: {
+            postcode: 'SW1A1AA',
+            floodRisk: { level: 'low', score: 2 },
+            fireRisk: { level: 'low', score: 2 },
+            subsidenceRisk: { level: 'high', score: 8 },
+            overallScore: 4,
+            summary: 'Low to medium risk area.',
+            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          },
+          floodData: {
+            zone: null,
+            severity: null,
+            warnings: [],
+            error: null,
+          },
         },
         error: null,
       }),
@@ -43,19 +51,27 @@ describe('useRiskAssessment', () => {
 
     const { result } = renderHook(() => useRiskAssessment());
 
-    let assessment: RiskAssessment | null = null;
+    let assessment: RiskAssessmentResult | null = null;
     await act(async () => {
       assessment = await result.current.assess(mockLocation);
     });
 
     expect(assessment).toEqual({
-      postcode: 'SW1A1AA',
-      floodRisk: { level: 'low', score: 2 },
-      fireRisk: { level: 'low', score: 2 },
-      subsidenceRisk: { level: 'high', score: 8 },
-      overallScore: 4,
-      summary: 'Low to medium risk area.',
-      keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+      assessment: {
+        postcode: 'SW1A1AA',
+        floodRisk: { level: 'low', score: 2 },
+        fireRisk: { level: 'low', score: 2 },
+        subsidenceRisk: { level: 'high', score: 8 },
+        overallScore: 4,
+        summary: 'Low to medium risk area.',
+        keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+      },
+      floodData: {
+        zone: null,
+        severity: null,
+        warnings: [],
+        error: null,
+      },
     });
   });
 
@@ -106,13 +122,21 @@ describe('useRiskAssessment', () => {
       status: 200,
       json: async () => ({
         data: {
-          postcode: 'SW1A1AA',
-          floodRisk: { level: 'low', score: 2 },
-          fireRisk: { level: 'low', score: 2 },
-          subsidenceRisk: { level: 'high', score: 8 },
-          overallScore: 4,
-          summary: 'Low to medium risk area.',
-          keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          assessment: {
+            postcode: 'SW1A1AA',
+            floodRisk: { level: 'low', score: 2 },
+            fireRisk: { level: 'low', score: 2 },
+            subsidenceRisk: { level: 'high', score: 8 },
+            overallScore: 4,
+            summary: 'Low to medium risk area.',
+            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          },
+          floodData: {
+            zone: null,
+            severity: null,
+            warnings: [],
+            error: null,
+          },
         },
         error: null,
       }),
@@ -125,7 +149,7 @@ describe('useRiskAssessment', () => {
     vi.mocked(fetch).mockReturnValue(fetchPromise);
 
     const { result } = renderHook(() => useRiskAssessment());
-    let assessmentPromise: Promise<RiskAssessment> | null = null;
+    let assessmentPromise: Promise<RiskAssessmentResult> | null = null;
 
     act(() => {
       assessmentPromise = result.current.assess(mockLocation);
@@ -145,13 +169,21 @@ describe('useRiskAssessment', () => {
       status: 200,
       json: async () => ({
         data: {
-          postcode: 'SW1A1AA',
-          floodRisk: { level: 'low', score: 2 },
-          fireRisk: { level: 'low', score: 2 },
-          subsidenceRisk: { level: 'high', score: 8 },
-          overallScore: 4,
-          summary: 'Low to medium risk area.',
-          keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          assessment: {
+            postcode: 'SW1A1AA',
+            floodRisk: { level: 'low', score: 2 },
+            fireRisk: { level: 'low', score: 2 },
+            subsidenceRisk: { level: 'high', score: 8 },
+            overallScore: 4,
+            summary: 'Low to medium risk area.',
+            keyFactors: ['Factor 1', 'Factor 2', 'Factor 3'],
+          },
+          floodData: {
+            zone: null,
+            severity: null,
+            warnings: [],
+            error: null,
+          },
         },
         error: null,
       }),
