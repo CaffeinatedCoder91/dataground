@@ -51,7 +51,7 @@ const BGS_SUPERFICIAL_LAYER = 'BGS.50k.Superficial.deposits';
 const FLOOD_FETCH_TIMEOUT_MS = 5000;
 const GEOLOGY_FETCH_TIMEOUT_MS = 8000;
 const CLAUDE_REQUEST_TIMEOUT_MS = 20000;
-const CLAUDE_MAX_RETRIES = 1;
+const CLAUDE_MAX_RETRIES = 0;
 const BODY_STREAM_READ_TIMEOUT_MS = 5000;
 const FLOOD_HARD_TIMEOUT_MS = 7000;
 const GEOLOGY_HARD_TIMEOUT_MS = 10000;
@@ -620,7 +620,7 @@ export async function POST(request: Request) {
     maxRetries: CLAUDE_MAX_RETRIES,
   });
 
-  const messageResult = await client.messages.create({
+  const createMessage = client.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: MAX_TOKENS,
     temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
@@ -632,8 +632,15 @@ export async function POST(request: Request) {
     ],
   }).then<OperationResult<Awaited<ReturnType<typeof client.messages.create>>>, OperationResult<Awaited<ReturnType<typeof client.messages.create>>>>(
     (message) => ({ data: message, error: null }),
-    () => ({ data: null, error: 'Failed to generate risk assessment' })
+    (error) => ({ data: null, error: `[diag] anthropic error: ${error?.name ?? 'unknown'}: ${error?.message ?? error}` })
   );
+
+  const messageResult = await withHardTimeout(
+    createMessage,
+    CLAUDE_REQUEST_TIMEOUT_MS,
+    { data: null, error: `[diag] anthropic hard-timeout after ${CLAUDE_REQUEST_TIMEOUT_MS}ms` }
+  );
+  console.error('[diag] after anthropic call', messageResult.error ?? 'ok');
 
   if (!messageResult.data) {
     return Response.json(
