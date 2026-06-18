@@ -117,13 +117,21 @@ const emptyGeologyData = (error: string | null = null): GeologyData => ({
 });
 
 const getClientAddress = (request: Request): string => {
-  const forwardedFor = request.headers.get('x-forwarded-for');
+  const headers = request.headers as any;
+  const getHeader = (name: string): string | null => {
+    if (typeof headers.get === 'function') {
+      return headers.get(name);
+    }
+    return headers[name] || null;
+  };
+
+  const forwardedFor = getHeader('x-forwarded-for');
   if (forwardedFor) {
     const forwardedAddresses = forwardedFor.split(',');
     return forwardedAddresses[FIRST_FORWARDED_ADDRESS_INDEX].trim();
   }
 
-  const realAddress = request.headers.get('x-real-ip');
+  const realAddress = getHeader('x-real-ip');
   if (realAddress) {
     return realAddress;
   }
