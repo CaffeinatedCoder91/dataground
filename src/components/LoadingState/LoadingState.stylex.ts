@@ -1,6 +1,15 @@
 import * as stylex from '@stylexjs/stylex';
 import { colours, spacing, sizing, fontSize, borderWidth, borderRadius } from '../../styles/tokens.stylex';
 
+const spinKeyframes = stylex.keyframes({
+  from: {
+    transform: 'rotate(0deg)',
+  },
+  to: {
+    transform: 'rotate(360deg)',
+  },
+});
+
 export const styles = stylex.create({
   container: {
     display: 'flex',
@@ -16,7 +25,10 @@ export const styles = stylex.create({
     borderWidth: borderWidth.thick,
     borderColor: colours.borderDefault,
     borderTopColor: colours.spinner,
-    animation: 'spin 1s linear infinite',
+    animationName: spinKeyframes,
+    animationDuration: '1s',
+    animationTimingFunction: 'linear',
+    animationIterationCount: 'infinite',
   },
   message: {
     fontSize: fontSize.base,
