@@ -6,7 +6,7 @@ import stylexPlugin from '@stylexjs/babel-plugin'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import riskAssessmentHandler from './api/risk-assessment'
+import { POST as riskAssessmentHandler } from './api/risk-assessment'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 

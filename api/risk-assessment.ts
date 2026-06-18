@@ -8,7 +8,6 @@ import {
   FIRST_CLAUDE_MESSAGE_CONTENT_INDEX,
   HTTP_STATUS_BAD_REQUEST,
   HTTP_STATUS_INTERNAL_SERVER_ERROR,
-  HTTP_STATUS_METHOD_NOT_ALLOWED,
   HTTP_STATUS_TOO_MANY_REQUESTS,
   KEY_FACTORS_COUNT,
   MAX_OVERALL_SCORE,
@@ -45,11 +44,18 @@ interface RequestWithJson {
   json: () => Promise<unknown>;
 }
 
+interface HeadersWithGet {
+  get: (key: string) => string | null;
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const hasJsonMethod = (value: unknown): value is RequestWithJson =>
   isRecord(value) && typeof value.json === 'function';
+
+const hasHeaderGetMethod = (value: unknown): value is HeadersWithGet =>
+  isRecord(value) && typeof value.get === 'function';
 
 const getHeaderValue = (request: unknown, headerName: string): string | null => {
   if (!isRecord(request)) {
@@ -63,9 +69,8 @@ const getHeaderValue = (request: unknown, headerName: string): string | null => 
   }
 
   // Handle Web API Headers object (Vercel runtime)
-  if (typeof (headers as Record<string, unknown>).get === 'function') {
-    const getMethod = (headers as Record<string, unknown>).get as (key: string) => string | null;
-    return getMethod(headerName);
+  if (hasHeaderGetMethod(headers)) {
+    return headers.get(headerName);
   }
 
   // Handle Node.js IncomingMessage plain object
@@ -200,14 +205,7 @@ const riskAssessmentResponseSchema = z.object({
   keyFactors: z.array(z.string()).length(KEY_FACTORS_COUNT),
 });
 
-export default async function handler(request: Request) {
-  if (request.method !== 'POST') {
-    return Response.json(
-      { data: null, error: 'Method not allowed' },
-      { status: HTTP_STATUS_METHOD_NOT_ALLOWED }
-    );
-  }
-
+export async function POST(request: Request) {
   const clientAddress = getClientAddress(request);
   if (!isRequestAllowed(clientAddress)) {
     return Response.json(
