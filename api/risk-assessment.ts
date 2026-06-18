@@ -41,16 +41,12 @@ interface RequestEntry {
 
 const requestCountMap = new Map<string, RequestEntry>();
 
-interface HeadersWithGetter {
-  get: (headerName: string) => string | null;
-}
-
 interface RequestWithJson {
   json: () => Promise<unknown>;
 }
 
-const hasHeadersGetter = (value: unknown): value is HeadersWithGetter =>
-  isRecord(value) && typeof value.get === 'function';
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
 
 const hasJsonMethod = (value: unknown): value is RequestWithJson =>
   isRecord(value) && typeof value.json === 'function';
@@ -62,14 +58,17 @@ const getHeaderValue = (request: unknown, headerName: string): string | null => 
 
   const headers = request.headers;
 
-  if (hasHeadersGetter(headers)) {
-    return headers.get(headerName);
-  }
-
   if (!isRecord(headers)) {
     return null;
   }
 
+  // Handle Web API Headers object (Vercel runtime)
+  if (typeof (headers as Record<string, unknown>).get === 'function') {
+    const getMethod = (headers as Record<string, unknown>).get as (key: string) => string | null;
+    return getMethod(headerName);
+  }
+
+  // Handle Node.js IncomingMessage plain object
   const headerValue = headers[headerName];
   if (typeof headerValue === 'string') {
     return headerValue;
@@ -140,9 +139,6 @@ if (
 ) {
   cleanupTimer.unref();
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const parseRequestBody = async (request: unknown): Promise<unknown> => {
   if (hasJsonMethod(request)) {
