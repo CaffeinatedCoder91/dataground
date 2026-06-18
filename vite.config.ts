@@ -8,6 +8,7 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { POST as riskAssessmentHandler } from './api/risk-assessment'
 import { POST as riskHandler } from './api/risk'
+import { GET as geologyHandler } from './api/geology'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 
@@ -131,6 +132,39 @@ const createLocalApiPlugin = (): Plugin => ({
             JSON.stringify({
               data: null,
               error: 'Failed to generate risk assessment',
+            }),
+          )
+        }
+      },
+    )
+
+    server.middlewares.use(
+      '/api/geology',
+      async (request: RequestWithOriginalUrl, serverResponse) => {
+        try {
+          const originalUrl = request.originalUrl ?? '/api/geology'
+          const url = new URL(originalUrl, 'http://localhost')
+          const webRequest = new Request(url, {
+            method: request.method,
+            headers: getRequestHeaders(request),
+          })
+
+          console.log('Geology handler called for:', originalUrl)
+          const webResponse = await geologyHandler(webRequest)
+          console.log('Geology response status:', webResponse.status)
+          await sendWebResponse(webResponse, serverResponse)
+        } catch (caughtError) {
+          console.error(
+            'Local API error in geology:',
+            caughtError instanceof Error ? caughtError.message : String(caughtError),
+          )
+
+          serverResponse.statusCode = 500
+          serverResponse.setHeader('Content-Type', 'application/json')
+          serverResponse.end(
+            JSON.stringify({
+              data: null,
+              error: 'Failed to fetch geology data',
             }),
           )
         }

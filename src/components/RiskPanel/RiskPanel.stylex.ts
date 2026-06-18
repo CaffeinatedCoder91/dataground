@@ -108,4 +108,37 @@ export const styles = stylex.create({
     color: '#6b7280',
     fontStyle: 'italic',
   },
+  subsidenceHigh: {
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
+  },
+  subsidenceMedium: {
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+  },
+  subsidenceLow: {
+    backgroundColor: '#dbeafe',
+    color: '#1e40af',
+  },
+  amenitiesList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+  },
+  amenityItem: {
+    padding: '0.5rem',
+    backgroundColor: '#f9fafb',
+    borderRadius: '0.375rem',
+    borderLeft: '3px solid #3b82f6',
+    fontSize: '0.875rem',
+    color: '#1f2937',
+  },
+  amenityName: {
+    fontWeight: 600,
+    marginBottom: '0.25rem',
+  },
+  amenityDistance: {
+    fontSize: '0.75rem',
+    color: '#6b7280',
+  },
 });

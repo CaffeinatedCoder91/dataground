@@ -15,7 +15,9 @@ import { useGeocoding } from './hooks/useGeocoding';
 import { useRiskAssessment } from './hooks/useRiskAssessment';
 import { useResultsCache } from './hooks/useResultsCache';
 import { useRecentSearches } from './hooks/useRecentSearches';
-import type { Coordinates, PostcodeLocation, RiskAssessment, FloodRiskData, RiskAssessmentResult } from './types';
+import { fetchGeologyData } from './services/geology';
+import { fetchAmenitiesData } from './services/amenities';
+import type { Coordinates, PostcodeLocation, RiskAssessment, FloodRiskData, GeologyData, AmenitiesData, RiskAssessmentResult } from './types';
 import { styles } from './App.stylex';
 
 type AppStatus = 'idle' | 'geocoding' | 'analysing' | 'complete' | 'error';
@@ -42,6 +44,8 @@ const App = () => {
   const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
   const [riskAssessment, setRiskAssessment] = useState<RiskAssessment | null>(null);
   const [floodData, setFloodData] = useState<FloodRiskData | null>(null);
+  const [geologyData, setGeologyData] = useState<GeologyData | null>(null);
+  const [amenitiesData, setAmenitiesData] = useState<AmenitiesData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const { geocode } = useGeocoding();
@@ -64,6 +68,8 @@ const App = () => {
     setErrorMessage(null);
     setRiskAssessment(null);
     setFloodData(null);
+    setGeologyData(null);
+    setAmenitiesData(null);
 
     const cachedResult = getCachedResult(postcode);
     if (cachedResult) {
@@ -74,6 +80,8 @@ const App = () => {
       });
       setRiskAssessment(cachedResult.assessment);
       setFloodData(cachedResult.floodData || null);
+      setGeologyData(cachedResult.geologyData || null);
+      setAmenitiesData(cachedResult.amenitiesData || null);
       setStatus('complete');
       addRecentSearch(postcode);
       updateUrlParameter(postcode);
@@ -125,7 +133,21 @@ const App = () => {
     const result = assessmentResult.data;
     setRiskAssessment(result.assessment);
     setFloodData(result.floodData);
-    setCachedResult(postcode, { location, assessment: result.assessment, floodData: result.floodData });
+
+    const [geology, amenities] = await Promise.all([
+      fetchGeologyData(location.latitude, location.longitude),
+      fetchAmenitiesData(location.latitude, location.longitude),
+    ]);
+
+    setGeologyData(geology);
+    setAmenitiesData(amenities);
+    setCachedResult(postcode, {
+      location,
+      assessment: result.assessment,
+      floodData: result.floodData,
+      geologyData: geology,
+      amenitiesData: amenities,
+    });
     setStatus('complete');
     addRecentSearch(postcode);
     updateUrlParameter(postcode);
@@ -199,7 +221,13 @@ const App = () => {
                   postcode={currentLocation.postcode}
                   region={currentLocation.region}
                 />
-                {floodData && <RiskPanel floodData={floodData} />}
+                {(floodData || geologyData || amenitiesData) && (
+                  <RiskPanel
+                    floodData={floodData || { zone: null, severity: null, warnings: [], error: null }}
+                    geologyData={geologyData || undefined}
+                    amenitiesData={amenitiesData || undefined}
+                  />
+                )}
                 <ShareButton postcode={currentLocation.postcode} />
               </>
             )}

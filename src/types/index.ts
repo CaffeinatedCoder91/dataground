@@ -65,7 +65,29 @@ export interface FloodRiskData {
   polygon?: Feature<Polygon | MultiPolygon, Record<string, never>>;
 }
 
+export type SubsidenceRisk = 'High' | 'Medium' | 'Low' | 'Unknown';
+
+export interface GeologyData {
+  formation: string | null;
+  subsidenceRisk: SubsidenceRisk;
+  disclaimer: string;
+  error: string | null;
+}
+
+export interface Amenity {
+  name: string;
+  distance: number;
+  type: string;
+}
+
+export interface AmenitiesData {
+  amenities: Amenity[];
+  error: string | null;
+}
+
 export interface RiskAssessmentResult {
   assessment: RiskAssessment;
   floodData: FloodRiskData;
+  geologyData?: GeologyData;
+  amenitiesData?: AmenitiesData;
 }
