@@ -1,4 +1,5 @@
-import { Anthropic } from '@anthropic-ai/sdk';
+// @ts-expect-error Vercel provides these handler types in the deployment runtime.
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { z } from 'zod';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -6,7 +7,6 @@ import { CLAUDE_MODEL, MAX_TOKENS } from './config.js';
 import { buildRealDataRiskPrompt } from './prompts/realDataRiskPrompt.js';
 import { buildRiskContext } from '../src/services/reportBuilder.js';
 import {
-  CLAUDE_TEMPERATURE_DETERMINISTIC,
   FIRST_FORWARDED_ADDRESS_INDEX,
   FIRST_CLAUDE_MESSAGE_CONTENT_INDEX,
   HTTP_STATUS_BAD_REQUEST,
@@ -26,12 +26,6 @@ import type {
   SubsidenceRisk,
 } from '../src/types/index.js';
 
-export const maxDuration = 30;
-
-export const config = {
-  runtime: 'nodejs',
-};
-
 interface OperationResult<T> {
   data: T | null;
   error: string | null;
@@ -42,6 +36,13 @@ interface RequestEntry {
   timestamp: number;
 }
 
+interface ClaudeMessageResponse {
+  content: Array<{
+    type: string;
+    text: string;
+  }>;
+}
+
 const requestCountMap = new Map<string, RequestEntry>();
 const execFileAsync = promisify(execFile);
 
@@ -50,9 +51,7 @@ const BGS_WMS_URL = 'https://map.bgs.ac.uk/arcgis/services/BGS_Detailed_Geology/
 const BGS_SUPERFICIAL_LAYER = 'BGS.50k.Superficial.deposits';
 const FLOOD_FETCH_TIMEOUT_MS = 5000;
 const GEOLOGY_FETCH_TIMEOUT_MS = 8000;
-const CLAUDE_REQUEST_TIMEOUT_MS = 20000;
-const CLAUDE_MAX_RETRIES = 0;
-const BODY_STREAM_READ_TIMEOUT_MS = 5000;
+const CLAUDE_REQUEST_TIMEOUT_MS = 18000;
 const FLOOD_HARD_TIMEOUT_MS = 7000;
 const GEOLOGY_HARD_TIMEOUT_MS = 10000;
 
@@ -136,7 +135,7 @@ const emptyGeologyData = (error: string | null = null): GeologyData => ({
   error,
 });
 
-const getClientAddress = (request: Request): string => {
+const getClientAddress = (request: VercelRequest): string => {
   const headers = request.headers as any;
   const getHeader = (name: string): string | null => {
     if (typeof headers.get === 'function') {
@@ -220,56 +219,23 @@ const parseJsonText = <T>(
     );
 };
 
-const readRequestBody = async (request: Request): Promise<OperationResult<string>> => {
-  const req = request as any;
+const parseRequest = async (request: VercelRequest): Promise<OperationResult<RiskAssessmentRequest>> => {
+  const requestBody = request.body;
 
-  // Fetch-style Request (Edge runtime): consume the body stream as text.
-  if (typeof req.text === 'function') {
-    try {
-      const requestText = await req.text();
-      return { data: requestText, error: null };
-    } catch {
-      return { data: null, error: 'Invalid request body' };
-    }
-  }
-
-  // Vercel Node runtime: body may already be parsed onto req.body.
-  if (req.body !== undefined && req.body !== null) {
-    const raw = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-    return { data: raw, error: null };
-  }
-
-  // Node IncomingMessage fallback: read the raw stream, bounded so a request
-  // with no body (or a stalled stream that never emits 'end') can't hang the
-  // function until the platform timeout.
-  try {
-    const readStream = (async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-      }
-      return Buffer.concat(chunks).toString('utf8');
-    })();
-
-    const timeout = new Promise<string>((resolve) => {
-      setTimeout(() => resolve(''), BODY_STREAM_READ_TIMEOUT_MS);
-    });
-
-    const body = await Promise.race([readStream, timeout]);
-    return { data: body, error: null };
-  } catch {
+  if (requestBody === undefined || requestBody === null) {
     return { data: null, error: 'Invalid request body' };
   }
-};
 
-const parseRequest = async (request: Request): Promise<OperationResult<RiskAssessmentRequest>> => {
-  const requestTextResult = await readRequestBody(request);
-
-  if (!requestTextResult.data) {
-    return { data: null, error: requestTextResult.error };
+  if (typeof requestBody === 'string') {
+    return await parseJsonText(requestBody, riskAssessmentRequestSchema, 'Invalid request body');
   }
 
-  return await parseJsonText(requestTextResult.data, riskAssessmentRequestSchema, 'Invalid request body');
+  const validationResult = riskAssessmentRequestSchema.safeParse(requestBody);
+  if (!validationResult.success) {
+    return { data: null, error: 'Invalid request body' };
+  }
+
+  return { data: validationResult.data, error: null };
 };
 
 const fetchWithTimeout = async (
@@ -549,33 +515,79 @@ const parseClaudeResponse = async (responseText: string, postcode: string): Prom
   return { data: validationResult.data, error: null };
 };
 
-export async function POST(request: Request) {
-  const clientAddress = getClientAddress(request);
-  if (!isRequestAllowed(clientAddress)) {
-    return Response.json(
-      { data: null, error: 'Too many requests. Please wait a moment and try again.' },
-      { status: HTTP_STATUS_TOO_MANY_REQUESTS }
+const callClaudeMessagesApi = async (
+  apiKey: string,
+  prompt: string
+): Promise<OperationResult<ClaudeMessageResponse>> => {
+  const model = CLAUDE_MODEL;
+  const max_tokens = MAX_TOKENS;
+  const messages = [
+    {
+      role: 'user',
+      content: prompt,
+    },
+  ];
+  const system = undefined;
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Anthropic request timed out')), CLAUDE_REQUEST_TIMEOUT_MS)
+  );
+
+  return await Promise.resolve()
+    .then(async () => {
+      const response = await Promise.race([
+        fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ model, max_tokens, messages, system }),
+        }),
+        timeoutPromise,
+      ]) as Response;
+
+      if (!response.ok) {
+        console.error('Anthropic API error status:', response.status);
+        return { data: null, error: 'Failed to generate risk assessment' };
+      }
+
+      const message = await response.json() as ClaudeMessageResponse;
+      return { data: message, error: null };
+    })
+    .then<OperationResult<ClaudeMessageResponse>, OperationResult<ClaudeMessageResponse>>(
+      (message) => message,
+      (error) => ({ data: null, error: error?.message ?? 'Failed to generate risk assessment' })
     );
+};
+
+const handleRiskAssessment = async (req: VercelRequest, res: VercelResponse): Promise<void> => {
+  const clientAddress = getClientAddress(req);
+  if (!isRequestAllowed(clientAddress)) {
+    res.status(HTTP_STATUS_TOO_MANY_REQUESTS).json(
+      { data: null, error: 'Too many requests. Please wait a moment and try again.' }
+    );
+    return;
   }
 
-  const bodyResult = await parseRequest(request);
+  const bodyResult = await parseRequest(req);
   if (!bodyResult.data) {
-    return Response.json(
-      { data: null, error: bodyResult.error },
-      { status: HTTP_STATUS_BAD_REQUEST }
+    res.status(HTTP_STATUS_BAD_REQUEST).json(
+      { data: null, error: bodyResult.error || 'Invalid request body' }
     );
+    return;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return Response.json(
-      { data: null, error: 'API key not configured' },
-      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json(
+      { data: null, error: 'API key not configured' }
     );
+    return;
   }
 
   const body = bodyResult.data;
-  console.error('[diag] before data fetch');
   const sourceResults = await Promise.allSettled([
     withHardTimeout(
       fetchFloodRisk(body.latitude, body.longitude),
@@ -588,7 +600,6 @@ export async function POST(request: Request) {
       emptyGeologyData('British Geological Survey data timed out.')
     ),
   ]);
-  console.error('[diag] after data fetch', JSON.stringify(sourceResults.map((r) => r.status)));
 
   const floodData = getSettledData(sourceResults[0], emptyFloodRiskData('Environment Agency flood data is unavailable right now.'));
   const geologyData = getSettledData(sourceResults[1], emptyGeologyData('British Geological Survey data is unavailable right now.'));
@@ -602,7 +613,7 @@ export async function POST(request: Request) {
   };
 
   if (!floodData.available || !geologyData.available) {
-    return Response.json({
+    res.status(200).json({
       data: {
         assessment: buildIncompleteAssessment(body.postcode, floodData, geologyData),
         floodData,
@@ -610,50 +621,24 @@ export async function POST(request: Request) {
       },
       error: null,
     });
+    return;
   }
 
-  console.error('[diag] before anthropic call');
   const prompt = buildRealDataRiskPrompt(buildRiskContext(payload));
-  const client = new Anthropic({
-    apiKey,
-    timeout: CLAUDE_REQUEST_TIMEOUT_MS,
-    maxRetries: CLAUDE_MAX_RETRIES,
-  });
-
-  const createMessage = client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: MAX_TOKENS,
-    temperature: CLAUDE_TEMPERATURE_DETERMINISTIC,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-  }).then<OperationResult<Awaited<ReturnType<typeof client.messages.create>>>, OperationResult<Awaited<ReturnType<typeof client.messages.create>>>>(
-    (message) => ({ data: message, error: null }),
-    (error) => ({ data: null, error: `[diag] anthropic error: ${error?.name ?? 'unknown'}: ${error?.message ?? error}` })
-  );
-
-  const messageResult = await withHardTimeout(
-    createMessage,
-    CLAUDE_REQUEST_TIMEOUT_MS,
-    { data: null, error: `[diag] anthropic hard-timeout after ${CLAUDE_REQUEST_TIMEOUT_MS}ms` }
-  );
-  console.error('[diag] after anthropic call', messageResult.error ?? 'ok');
+  const messageResult = await callClaudeMessagesApi(apiKey, prompt);
 
   if (!messageResult.data) {
-    return Response.json(
-      { data: null, error: messageResult.error },
-      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json(
+      { data: null, error: messageResult.error || 'Failed to generate risk assessment' }
     );
+    return;
   }
 
   if (!('content' in messageResult.data)) {
-    return Response.json(
-      { data: null, error: 'Failed to generate risk assessment' },
-      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json(
+      { data: null, error: 'Failed to generate risk assessment' }
     );
+    return;
   }
 
   const firstContentBlock = messageResult.data.content[FIRST_CLAUDE_MESSAGE_CONTENT_INDEX];
@@ -664,13 +649,13 @@ export async function POST(request: Request) {
 
   const assessmentResult = await parseClaudeResponse(responseText, body.postcode);
   if (!assessmentResult.data) {
-    return Response.json(
-      { data: null, error: assessmentResult.error },
-      { status: HTTP_STATUS_INTERNAL_SERVER_ERROR }
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json(
+      { data: null, error: assessmentResult.error || 'Failed to generate risk assessment' }
     );
+    return;
   }
 
-  return Response.json({
+  res.status(200).json({
     data: {
       assessment: assessmentResult.data,
       floodData,
@@ -678,6 +663,8 @@ export async function POST(request: Request) {
     },
     error: null,
   });
-}
+};
 
-export default POST;
+export default function handler(req: VercelRequest, res: VercelResponse) {
+  return handleRiskAssessment(req, res);
+}

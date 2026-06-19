@@ -1,18 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import handler from './risk-assessment.js';
 
-const anthropicMessagesCreate = vi.hoisted(() => vi.fn());
-
-vi.mock('@anthropic-ai/sdk', () => ({
-  Anthropic: vi.fn(function AnthropicMock() {
-    return {
-      messages: {
-        create: anthropicMessagesCreate,
-      },
-    };
-  }),
-}));
-
 interface RiskAssessmentResponseData {
   assessment: {
     postcode: string;
@@ -30,13 +18,42 @@ interface RiskAssessmentApiResponse {
   error: string | null;
 }
 
+let requestId = 0;
+
 const parseRiskAssessmentApiResponse = async (
   response: Response
 ): Promise<RiskAssessmentApiResponse> => {
   return response.json() as Promise<RiskAssessmentApiResponse>;
 };
 
-const mockSuccessfulSourceFetches = () => {
+const callRiskAssessmentHandler = async (
+  body: unknown
+): Promise<Response> => {
+  let statusCode = 200;
+  let responseBody: unknown;
+  const request = {
+    headers: {
+      'x-real-ip': `test-client-${requestId += 1}`,
+    },
+    body,
+  };
+  const response = {
+    status(status: number) {
+      statusCode = status;
+      return {
+        json(body: unknown) {
+          responseBody = body;
+        },
+      };
+    },
+  };
+
+  await handler(request as never, response as never);
+
+  return Response.json(responseBody, { status: statusCode });
+};
+
+const mockSuccessfulFetches = (claudeMessageResponse: unknown) => {
   vi.stubGlobal('fetch', vi.fn((url: string | URL | Request) => {
     const urlText = String(url);
     if (urlText.includes('flood-map-for-planning-flood-zones')) {
@@ -57,6 +74,42 @@ const mockSuccessfulSourceFetches = () => {
       }));
     }
 
+    if (urlText.includes('api.anthropic.com/v1/messages')) {
+      return Promise.resolve(Response.json(claudeMessageResponse));
+    }
+
+    return Promise.resolve(Response.json({}));
+  }));
+};
+
+const mockFetchesWithClaudeFailure = () => {
+  vi.stubGlobal('fetch', vi.fn((url: string | URL | Request) => {
+    const urlText = String(url);
+    if (urlText.includes('flood-map-for-planning-flood-zones')) {
+      return Promise.resolve(Response.json({ features: [] }));
+    }
+
+    if (urlText.includes('BGS_Detailed_Geology')) {
+      return Promise.resolve(Response.json({
+        type: 'FeatureCollection',
+        features: [
+          {
+            properties: {
+              LEX_D: 'London Clay Formation',
+              RCS_D: 'Clay',
+            },
+          },
+        ],
+      }));
+    }
+
+    if (urlText.includes('api.anthropic.com/v1/messages')) {
+      return Promise.resolve(Response.json(
+        { error: { message: 'Claude API error' } },
+        { status: 500 }
+      ));
+    }
+
     return Promise.resolve(Response.json({}));
   }));
 };
@@ -64,7 +117,6 @@ const mockSuccessfulSourceFetches = () => {
 describe('riskAssessmentHandler', () => {
   beforeEach(() => {
     process.env.ANTHROPIC_API_KEY = 'test-key';
-    anthropicMessagesCreate.mockReset();
   });
 
   afterEach(() => {
@@ -73,16 +125,11 @@ describe('riskAssessmentHandler', () => {
   });
 
   it('returns 400 when postcode is missing from the request body', async () => {
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         latitude: 51.5034,
         longitude: -0.1276,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const data = await parseRiskAssessmentApiResponse(response);
 
     expect(response.status).toBe(400);
@@ -91,16 +138,11 @@ describe('riskAssessmentHandler', () => {
   });
 
   it('returns 400 when latitude is missing from the request body', async () => {
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         postcode: 'SW1A1AA',
         longitude: -0.1276,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const data = await parseRiskAssessmentApiResponse(response);
 
     expect(response.status).toBe(400);
@@ -109,16 +151,11 @@ describe('riskAssessmentHandler', () => {
   });
 
   it('returns 400 when longitude is missing from the request body', async () => {
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         postcode: 'SW1A1AA',
         latitude: 51.5034,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const data = await parseRiskAssessmentApiResponse(response);
 
     expect(response.status).toBe(400);
@@ -143,20 +180,14 @@ describe('riskAssessmentHandler', () => {
       ],
     };
 
-    anthropicMessagesCreate.mockResolvedValue(claudeMessageResponse);
-    mockSuccessfulSourceFetches();
+    mockSuccessfulFetches(claudeMessageResponse);
 
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         postcode: 'SW1A1AA',
         latitude: 51.5034,
         longitude: -0.1276,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const data = await parseRiskAssessmentApiResponse(response);
 
     expect(response.status).toBe(200);
@@ -173,20 +204,14 @@ describe('riskAssessmentHandler', () => {
   });
 
   it('returns the correct JSON shape with null data and error string on Claude failure', async () => {
-    anthropicMessagesCreate.mockRejectedValue(new Error('Claude API error'));
-    mockSuccessfulSourceFetches();
+    mockFetchesWithClaudeFailure();
 
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         postcode: 'SW1A1AA',
         latitude: 51.5034,
         longitude: -0.1276,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const data = await parseRiskAssessmentApiResponse(response);
 
     expect(response.status).toBe(500);
@@ -211,20 +236,14 @@ describe('riskAssessmentHandler', () => {
       ],
     };
 
-    anthropicMessagesCreate.mockResolvedValue(claudeMessageResponse);
-    mockSuccessfulSourceFetches();
+    mockSuccessfulFetches(claudeMessageResponse);
 
-    const request = new Request('http://localhost/api/risk-assessment', {
-      method: 'POST',
-      body: JSON.stringify({
+    const response = await callRiskAssessmentHandler({
         postcode: 'SW1A1AA',
         latitude: 51.5034,
         longitude: -0.1276,
         region: 'Greater London',
-      }),
-    });
-
-    const response = await handler(request);
+      });
     const responseText = await response.text();
 
     expect(responseText).not.toContain('ANTHROPIC_API_KEY');

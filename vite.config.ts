@@ -6,7 +6,7 @@ import stylexPlugin from '@stylexjs/babel-plugin'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { POST as riskAssessmentHandler } from './api/risk-assessment'
+import riskAssessmentHandler from './api/risk-assessment'
 import { GET as geologyHandler } from './api/geology'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
@@ -62,6 +62,16 @@ const sendWebResponse = async (
   serverResponse.end(Buffer.from(responseBody))
 }
 
+const sendVercelResponse = (
+  serverResponse: ServerResponse,
+  statusCode: number,
+  responseBody: unknown,
+) => {
+  serverResponse.statusCode = statusCode
+  serverResponse.setHeader('Content-Type', 'application/json')
+  serverResponse.end(JSON.stringify(responseBody))
+}
+
 const createLocalApiPlugin = (): Plugin => ({
   name: 'local-api',
   configureServer(server) {
@@ -70,19 +80,26 @@ const createLocalApiPlugin = (): Plugin => ({
       async (request: RequestWithOriginalUrl, serverResponse) => {
         try {
           const requestBody = await readRequestBody(request)
-          const originalUrl = request.originalUrl ?? '/api/risk-assessment'
-          const url = new URL(originalUrl, 'http://localhost')
-          const webRequest = new Request(url, {
-            method: request.method,
-            headers: getRequestHeaders(request),
-            body:
-              request.method === 'GET' || request.method === 'HEAD'
-                ? undefined
-                : requestBody,
-          })
+          const contentType = request.headers['content-type'] || ''
+          const rawBody = requestBody.toString('utf8')
+          const body = contentType.includes('application/json')
+            ? JSON.parse(rawBody)
+            : rawBody
+          const vercelRequest = {
+            ...request,
+            body,
+          }
+          const vercelResponse = {
+            status(statusCode: number) {
+              return {
+                json(responseBody: unknown) {
+                  sendVercelResponse(serverResponse, statusCode, responseBody)
+                },
+              }
+            },
+          }
 
-          const webResponse = await riskAssessmentHandler(webRequest)
-          await sendWebResponse(webResponse, serverResponse)
+          await riskAssessmentHandler(vercelRequest as never, vercelResponse as never)
         } catch (caughtError) {
           console.error(
             'Local API error:',
