@@ -117,18 +117,27 @@ npm run test:watch   # run tests in watch mode
 dataground/
   api/
     config.ts              # Claude model constants
-    risk-assessment.ts     # Vercel serverless function — aggregates BGS data,
+    geology.ts             # Serverless CORS proxy for BGS WFS requests
+    prompts/
+      realDataRiskPrompt.ts  # Prompt template for real-data synthesis
+      riskAssessmentPrompt.ts
+      index.ts
+    risk-assessment.ts     # Vercel serverless function — aggregates data,
                             # sends real data to Claude for synthesis
+    risk-assessment.test.ts
+    tsconfig.json
   src/
     components/             # UI components (each with .stylex.ts and .test.tsx)
+    constants/              # Shared app-wide constants
     services/
       floodRisk.ts          # Environment Agency flood zone integration
-      geology.ts             # BGS superficial geology integration
-      reportBuilder.ts       # assembles real data payload sent to Claude
-    hooks/                   # useGeocoding, useRiskAssessment
-    styles/                  # StyleX design tokens
-    types/                   # TypeScript types
-    utils/                   # Helper functions
+      geology.ts            # BGS superficial geology integration
+      reportBuilder.ts      # assembles real data payload sent to Claude
+    hooks/                  # useGeocoding, useRiskAssessment, useDebounce,
+                            # useRecentSearches, useResultsCache
+    styles/                 # StyleX design tokens
+    types/                  # TypeScript types
+    utils/                  # Helper functions
     App.tsx
 ```
 
